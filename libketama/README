@@ -1,0 +1,1 @@
+The new bootstrap and autotools-oriented files require automake 1.9+.  We are testing with automake 1.11
