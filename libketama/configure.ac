@@ -15,11 +15,11 @@ AC_CANONICAL_HOST
 case "${host}" in
   *-*-freebsd*)
 	CFLAGS="$CFLAGS"
-	LDFLAGS+=" -shared -Wl,-soname,libketama.so.1"
+	LDFLAGS="$LDFLAGS -shared -lm -Wl,-soname,libketama.so.1"
 	;;
   *-*-linux*)
 	CFLAGS="$CFLAGS"
-	LDFLAGS+=" -shared -Wl,-soname,libketama.so.1"
+	LDFLAGS+=" -shared -lm -Wl,-soname,libketama.so.1"
 	;;
   *-*-darwin*)
 	CFLAGS+=" -fPIC -W -Wall -Werror -isysroot /Developer/SDKs/MacOSX10.5.sdk -arch ppc -arch i386 -arch ppc64 -arch x86_64"
@@ -32,7 +32,7 @@ case "${host}" in
   *)
 	AC_MSG_RESULT([Unsupported operating system: ${host}, assuming defaults known to work on linux and freebsd])
 	CFLAGS="$CFLAGS"
-	LDFLAGS+=" -shared -Wl,-soname,libketama.so.1"
+	LDFLAGS+="$LDFLAGS -shared -lm -Wl,-soname,libketama.so.1"
 	;;
 esac
 
