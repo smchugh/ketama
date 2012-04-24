@@ -1,4 +1,4 @@
-PREFIX=/usr/local
+PREFIX=$(prefix)
 CFLAGS+=-fPIC -W -Wall -Werror
 
 all: build
