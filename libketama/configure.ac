@@ -11,10 +11,30 @@ AC_PROG_AWK
 AC_PROG_CC
 AC_PROG_INSTALL
 AC_PROG_LN_S
-
-# Checks for libraries.
-# FIXME: Replace `main' with a function in `-lm':
-# AC_CHECK_LIB([m], [main])
+AC_CANONICAL_HOST
+case "${host}" in
+  *-*-freebsd*)
+	CFLAGS="$CFLAGS"
+	LDFLAGS+=" -shared -Wl,-soname,libketama.so.1"
+	;;
+  *-*-linux*)
+	CFLAGS="$CFLAGS"
+	LDFLAGS+=" -shared -Wl,-soname,libketama.so.1"
+	;;
+  *-*-darwin*)
+	CFLAGS+=" -fPIC -W -Wall -Werror -isysroot /Developer/SDKs/MacOSX10.5.sdk -arch ppc -arch i386 -arch ppc64 -arch x86_64"
+	LDFLAGS+=" -g -dynamiclib -isysroot /Developer/SDKs/MacOSX10.5.sdk -arch ppc -arch i386 -arch ppc64 -arch x86_64"
+	;;
+  *-*-solaris2*)
+	CFLAGS+=" -DSOLARIS"
+	LDFLAGS+=" -shared -lm"
+	;;
+  *)
+	AC_MSG_RESULT([Unsupported operating system: ${host}, assuming defaults known to work on linux and freebsd])
+	CFLAGS="$CFLAGS"
+	LDFLAGS+=" -shared -Wl,-soname,libketama.so.1"
+	;;
+esac
 
 # Checks for header files.
 AC_CHECK_HEADERS([stdlib.h string.h syslog.h unistd.h])
