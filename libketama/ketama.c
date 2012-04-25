@@ -591,7 +591,11 @@ ketama_smoke( ketama_continuum contptr )
     int i;
     if (shm_data != NULL) {
         for (i = 0; i < num_data; i++) {
+#ifdef SOLARIS
+            shmdt((char *)shm_data[i]);
+#else
             shmdt(shm_data[i]);
+#endif
         }
         free(shm_data);
         shm_data = NULL;

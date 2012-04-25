@@ -26,8 +26,8 @@ case "${host}" in
 	LDFLAGS+=" -g -dynamiclib -isysroot /Developer/SDKs/MacOSX10.5.sdk -arch ppc -arch i386 -arch ppc64 -arch x86_64"
 	;;
   *-*-solaris2*)
-	CFLAGS+=" -DSOLARIS"
-	LDFLAGS+=" -shared -lm"
+	CFLAGS="$(CFLAGS) -DSOLARIS"
+	LDFLAGS="$(LDFLAGS) -shared -lm"
 	;;
   *)
 	AC_MSG_RESULT([Unsupported operating system: ${host}, assuming defaults known to work on linux and freebsd])
