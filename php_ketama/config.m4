@@ -39,7 +39,8 @@ if test "$PHP_KETAMA" != "no"; then
   ],[
     AC_MSG_ERROR([wrong ketama lib version or lib not found])
   ],[
-    -L$KETAMA_DIR/lib -lm -ldl
+    -L$KETAMA_DIR/lib -lm
+  esac
   ])
 
   PHP_SUBST(KETAMA_SHARED_LIBADD)
