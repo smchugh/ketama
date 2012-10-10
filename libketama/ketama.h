@@ -26,6 +26,9 @@
 * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#ifndef KETAMA_LIBKETAMA_KETAMA_H__
+#define KETAMA_LIBKETAMA_KETAMA_H__
+
 #include <sys/sem.h>    /* semaphore functions and structs. */
 
 #define MC_SHMSIZE  524288  // 512KB should be ample.
@@ -60,8 +63,11 @@ typedef struct
 typedef struct
 {
     int numpoints;
+    int numservers;
+    unsigned long memtotal;
     void* modtime;
     void* array; //array of mcs structs
+    void* slist; //array of serverinfo structs
 } continuum;
 
 typedef continuum* ketama_continuum;
@@ -82,6 +88,25 @@ void ketama_smoke( ketama_continuum contptr );
   * \param cont Pointer to the continuum in which we will search.
   * \return The mcs struct that the given key maps to. */
 mcs* ketama_get_server( char*, ketama_continuum );
+
+/** \brief Adds a server to the ring
+  * \param addr The address of the server that you want to add.
+  * \param newmemory The amount of allocated memory from this server to be added to the cluster
+  * \param cont Pointer to the continuum which we will refresh.
+  * \return 0 on failure, 1 on success. */
+int ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum cont);
+
+/** \brief Removes a server from the ring
+  * \param addr The address of the server that you want to add.
+  * \param cont Pointer to the continuum which we will refresh.
+  * \return 0 on failure, 1 on success. */
+int ketama_remove_server( char* addr, ketama_continuum cont);
+
+/** \brief Removes a server from the ring
+  * \param addr The address of the server that you want to remove.
+  * \param cont Pointer to the continuum which we will refresh.
+  * \return 0 on failure, 1 on success. */
+//int ketama_remove_server( char* ip, ketama_continuum cont);
 
 /** \brief Print the server list of a continuum to stdout.
   * \param cont The continuum to print. */
@@ -110,4 +135,6 @@ char* ketama_error();
 #ifdef __cplusplus /* If this is a C++ compiler, end C linkage */
 }
 #endif
+
+#endif // KETAMA_LIBKETAMA_KETAMA_H__
 

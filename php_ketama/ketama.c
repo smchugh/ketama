@@ -50,6 +50,8 @@ zend_function_entry ketama_functions[] = {
 	PHP_FE(ketama_roll,		        NULL)
 	PHP_FE(ketama_destroy,		    NULL)
 	PHP_FE(ketama_get_server,	    NULL)
+	PHP_FE(ketama_add_server,	    NULL)
+	PHP_FE(ketama_remove_server,    NULL)
     PHP_FE(ketama_print_continuum,  NULL)
     PHP_FE(ketama_error,            NULL)
 	{NULL, NULL, NULL}	/* Must be the last line in ketama_functions[] */
@@ -248,6 +250,47 @@ PHP_FUNCTION(ketama_get_server)
 	array_init( return_value );
 	add_assoc_long( return_value, "point", server->point );
 	add_assoc_string( return_value, "ip", server->ip, 1 );
+}
+/* }}} */
+
+
+/* {{{ proto int ketama_add_server(string $address, int $memory, resource $continuum)
+   Adds a server to the ring */
+PHP_FUNCTION(ketama_add_server)
+{
+	zval *zcontinuum;
+	ketama_continuum continuum;
+	char *address;
+	int address_len;
+	unsigned long memory;
+
+	if ( zend_parse_parameters( ZEND_NUM_ARGS() TSRMLS_CC, "slr", &address, &address_len, &memory, &zcontinuum ) == FAILURE )
+	{
+		return;
+	}
+
+	ZEND_FETCH_RESOURCE( continuum, ketama_continuum, &zcontinuum, -1, "ketama continuum", le_ketama_continuum );
+	return_value = ketama_add_server( address, memory, continuum );
+}
+/* }}} */
+
+
+/* {{{ proto int ketama_remove_server(string $address, resource $continuum)
+   Removes a server from the ring */
+PHP_FUNCTION(ketama_remove_server)
+{
+	zval *zcontinuum;
+	ketama_continuum continuum;
+	char *address;
+	long address_len;
+
+	if ( zend_parse_parameters( ZEND_NUM_ARGS() TSRMLS_CC, "sr", &address, &address_len, &zcontinuum ) == FAILURE )
+	{
+		return;
+	}
+
+	ZEND_FETCH_RESOURCE( continuum, ketama_continuum, &zcontinuum, -1, "ketama continuum", le_ketama_continuum );
+	return_value = ketama_remove_server( address, continuum );
 }
 /* }}} */
 

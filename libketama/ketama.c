@@ -55,6 +55,9 @@ int *sem_ids = NULL;
 int *shm_ids = NULL;
 int **shm_data = NULL;
 
+key_t file_key = 0;  // keep hold of the server list file key so we can reuse it when adding/removing servers
+                     // @todo replace with new logic for generating unique IPC keys for different conitnuums
+
 static void
 init_sem_id_tracker() {
     sem_ids = malloc(sizeof(int)*1024);
@@ -321,6 +324,94 @@ read_server_definitions( char* filename, unsigned int* count, unsigned long* mem
     return slist;
 }
 
+/** \brief Adds a server to the continuum struct
+  * \param addr The address of the server that you want to add.
+  * \param newmemory The amount of allocated memory from this server to be added to the cluster
+  * \param cont Pointer to the continuum which we will refresh. 
+  * \param count The value of this pointer will be set to the amount of servers which could be parsed.
+  * \param memory The value of this pointer will be set to the total amount of allocated memory across all servers.
+  * \return The temporary address of the list of servers with the new server added in */
+serverinfo*
+add_serverinfo( char* addr, unsigned long newmemory, ketama_continuum cont, unsigned int* count, unsigned long* memory)
+{
+    unsigned int i, numservers = *count;
+    unsigned long memtotal = *memory;
+    serverinfo newserver, *newslist = 0, *slist = cont->slist;
+    newserver.memory = 0;
+
+    // get the current number of servers and available total memory
+    numservers = cont->numservers;
+    memtotal = cont->memtotal;
+
+    // populate the new server struct
+    if ( ( strlen( addr ) - 1 ) < 23 ) {
+        strncpy( newserver.addr, addr, strlen(addr) );
+        newserver.addr[ strlen(addr) ] = '\0';
+        newserver.memory = newmemory;
+    }
+
+    // add the server to the list
+    newslist = (serverinfo*) realloc(newslist, sizeof( serverinfo ) * ( numservers + 1 ) );
+    for (i = 0; i < numservers; i++)
+    {
+        newslist[i] = slist[i];
+    }
+    newslist[i] = newserver;
+    numservers++;
+    memtotal += newmemory;
+
+
+    *count = numservers;
+    *memory = memtotal;
+
+    return newslist;
+}
+
+/** \brief Removes a server from the continuum struct
+  * \param addr The address of the server that you want to remove.
+  * \param cont Pointer to the continuum which we will refresh. 
+  * \param count The value of this pointer will be set to the amount of servers which could be parsed.
+  * \param memory The value of this pointer will be set to the total amount of allocated memory across all servers.
+  * \return The temporary address of the list of servers with the new server added in */
+serverinfo*
+remove_serverinfo( char* addr, ketama_continuum cont, unsigned int* count, unsigned long* memory)
+{
+    unsigned int i, j, numservers = *count;
+    unsigned long memtotal = *memory, oldmemory = 0;
+    serverinfo *slist = cont->slist;
+    serverinfo *newslist = 0;
+
+    // get the current number of servers and available total memory
+    numservers = cont->numservers - 1;
+    memtotal = cont->memtotal;
+
+    newslist = (serverinfo*) realloc(newslist, sizeof( serverinfo ) * ( numservers ) );
+    for (i = 0, j = 0; i < numservers + 1; i++)
+    {
+        if (!strcmp(addr, slist[i].addr)) {
+            oldmemory = slist[i].memory;
+        } else {
+            if (j < numservers) {
+                newslist[j] = slist[i];
+            }
+            j++;
+        }
+    }
+    // if we didn't find the server, don't remove anything and throw a warning
+    if (i == j) {
+        newslist = (serverinfo*) realloc(newslist, sizeof( serverinfo ) * ( ++numservers ) );
+        newslist[j-1] = slist[i-1];
+        sprintf( k_error, "%s not found and not removed!", addr );
+    }
+    
+    memtotal -= oldmemory;
+
+    *count = numservers;
+    *memory = memtotal;
+
+    return newslist;
+}
+
 
 unsigned int
 ketama_hashi( char* inString )
@@ -369,48 +460,22 @@ ketama_get_server( char* key, ketama_continuum cont )
     }
 }
 
-
-/** \brief Generates the continuum of servers (each server as many points on a circle).
+/** \brief Loads the continuum of servers (each server as many points on a circle).
   * \param key Shared memory key for storing the newly created continuum.
-  * \param filename Server definition file, which will be parsed to create this continuum.
+  * \param slist The address of the list of servers that your building the continuum from.
+  * \param numservers Number of servers available
+  * \param memory Amount of memory available accross all servers
+  * \param modtime File modtime
   * \return 0 on failure, 1 on success. */
-static int
-ketama_create_continuum( key_t key, char* filename )
+int
+load_continuum(key_t key, serverinfo* slist, unsigned int numservers, unsigned long memory, time_t modtime)
 {
-    if (shm_ids == NULL) {
-        init_shm_id_tracker();
-    }
-
-    if (shm_data == NULL) {
-        init_shm_data_tracker();
-    }
-
     int shmid;
     int* data;  /* Pointer to shmem location */
-    unsigned int numservers = 0;
-    unsigned long memory;
-    serverinfo* slist;
-
-    slist = read_server_definitions( filename, &numservers, &memory );
-    /* Check numservers first; if it is zero then there is no error message
-     * and we need to set one. */
-    if ( numservers < 1 )
-    {
-        sprintf( k_error, "No valid server definitions in file %s", filename );
-        return 0;
-    }
-    else if ( slist == 0 )
-    {
-        /* read_server_definitions must've set error message. */
-        return 0;
-    }
-#ifdef DEBUG
-     syslog( LOG_INFO, "Server definitions read: %u servers, total memory: %lu.\n",
-        numservers, memory );
-#endif
 
     /* Continuum will hold one mcs for each point on the circle: */
     mcs continuum[ numservers * 160 ];
+    serverinfo servers[ numservers ];
     unsigned int i, k, cont = 0;
 
     for( i = 0; i < numservers; i++ )
@@ -423,6 +488,10 @@ ketama_create_continuum( key_t key, char* filename )
         syslog( LOG_INFO, "Server no. %d: %s (mem: %lu = %u%% or %d of %d)\n",
             i, slist[i].addr, slist[i].memory, hpct, ks, numservers * 40 );
 #endif
+
+        // copy over the slist to usable memory
+        servers[i].memory = slist[i].memory;
+        strcpy (servers[i].addr, slist[i].addr);
 
         for( k = 0; k < ks; k++ )
         {
@@ -457,18 +526,20 @@ ketama_create_continuum( key_t key, char* filename )
     shmid = shmget( key, MC_SHMSIZE, 0644 | IPC_CREAT );
     track_shm_id(shmid);
 
-	data = shmat( shmid, (void *)0, 0 );
+    data = shmat( shmid, (void *)0, 0 );
     if ( data == (void *)(-1) )
     {
         strcpy( k_error, "Can't open shmmem for writing." );
         return 0;
     }
 
-    time_t modtime = file_modtime( filename );
-    int nump = cont;
-    memcpy( data, &nump, sizeof( int ) );
-    memcpy( data + 1, &modtime, sizeof( time_t ) );
-    memcpy( data + 1 + sizeof( void* ), &continuum, sizeof( mcs ) * nump );
+    memcpy( data, &cont, sizeof( int ) );
+    memcpy( data + 1, &numservers, sizeof( int ) );
+    memcpy( data + 2, &memory, sizeof( int ) );
+    memcpy( data + 3, &modtime, sizeof( time_t ) );
+    memcpy( data + 3 + sizeof( void* ), &continuum, sizeof( mcs ) * cont );
+    memcpy( data + 3 + sizeof( void* ) + ( sizeof( mcs ) * cont / sizeof(int) ), &servers, sizeof( serverinfo ) * numservers );
+
 
     /* We detatch here because we will re-attach in read-only
      * mode to actually use it. */
@@ -478,6 +549,152 @@ ketama_create_continuum( key_t key, char* filename )
     if ( shmdt( data ) == -1 )
 #endif
         strcpy( k_error, "Error detatching from shared memory!" );
+
+    return 1;
+}
+
+
+/** \brief Generates the continuum of servers (each server as many points on a circle).
+  * \param key Shared memory key for storing the newly created continuum.
+  * \param filename Server definition file, which will be parsed to create this continuum.
+  * \return 0 on failure, 1 on success. */
+static int
+ketama_create_continuum( key_t key, char* filename )
+{
+    if (shm_ids == NULL) {
+        init_shm_id_tracker();
+    }
+
+    if (shm_data == NULL) {
+        init_shm_data_tracker();
+    }
+
+    
+    unsigned int numservers = 0;
+    unsigned long memory;
+    serverinfo* slist;
+
+    slist = read_server_definitions( filename, &numservers, &memory );
+
+    /* Check numservers first; if it is zero then there is no error message
+     * and we need to set one. */
+    if ( numservers < 1 )
+    {
+        sprintf( k_error, "No valid server definitions in file %s", filename );
+        return 0;
+    }
+    else if ( slist == 0 )
+    {
+        /* read_server_definitions must've set error message. */
+        return 0;
+    }
+#ifdef DEBUG
+     syslog( LOG_INFO, "Server definitions read: %u servers, total memory: %lu.\n",
+        numservers, memory );
+#endif
+
+     time_t modtime = file_modtime( filename );
+
+     if ( !load_continuum( key, slist, numservers, memory, modtime ) )
+     {
+        sprintf( k_error, "Failed to load the continuum" );
+        return 0;
+     }
+    
+    return 1;
+}
+
+
+int
+ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum cont)
+{
+    key_t key;
+    int shmid;
+    int *data;
+    unsigned int numservers = 0;
+    unsigned long memory;
+    serverinfo* slist;
+
+    if (shm_ids == NULL) {
+        init_shm_id_tracker();
+    }
+
+    if (shm_data == NULL) {
+        init_shm_data_tracker();
+    }
+
+    // get the new server list
+    slist = add_serverinfo( addr, newmemory, cont, &numservers, &memory);
+
+    key = file_key;
+
+    if ( !load_continuum( key, slist, numservers, memory, 0 ) )
+    {
+        sprintf( k_error, "Failed to load the continuum" );
+        return 0;
+    }
+    
+    shmid = shmget( key, MC_SHMSIZE, 0 ); // read only attempt.
+    track_shm_id(shmid);
+
+    data = shmat( shmid, (void *)0, SHM_RDONLY );
+
+    cont->numpoints = *data;
+    cont->numservers = *(++data);
+    cont->memtotal = *(++data);
+    cont->modtime = ++data;
+    cont->array = data + sizeof( void* );
+    cont->slist = data + sizeof( void* ) + ( sizeof( mcs ) * cont->numpoints / sizeof(int) );
+
+    track_shm_data(data);
+
+
+    return 1;
+}
+
+int
+ketama_remove_server( char* addr, ketama_continuum cont)
+{
+    key_t key;
+    int shmid;
+    int *data;
+    unsigned int numservers = 0;
+    unsigned long memory;
+    serverinfo* slist;
+
+    if (shm_ids == NULL) {
+        init_shm_id_tracker();
+    }
+
+    if (shm_data == NULL) {
+        init_shm_data_tracker();
+    }
+
+    // get the new server list
+    slist = remove_serverinfo( addr, cont, &numservers, &memory);
+
+    key = file_key;
+
+    if ( !load_continuum( key, slist, numservers, memory, 0 ) )
+    {
+        sprintf( k_error, "Failed to load the continuum" );
+        return 0;
+    }
+    
+    shmid = shmget( key, MC_SHMSIZE, 0 ); // read only attempt.
+    track_shm_id(shmid);
+
+    data = shmat( shmid, (void *)0, SHM_RDONLY );
+
+    cont->numpoints = *data;
+    cont->numservers = *(++data);
+    cont->memtotal = *(++data);
+    cont->modtime = ++data;
+    cont->array = data + sizeof( void* );
+    cont->slist = data + sizeof( void* ) + ( sizeof( mcs ) * cont->numpoints / sizeof(int) );
+
+    track_shm_data(data);
+
 
     return 1;
 }
@@ -505,6 +722,7 @@ ketama_roll( ketama_continuum* contptr, char* filename )
 //     openlog( "ketama", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1 );
 
     key = ftok( filename, 'R' );
+    file_key = key;
     if ( key == -1 )
     {
         sprintf( k_error, "Invalid filename specified: %s", filename );
@@ -574,8 +792,11 @@ ketama_roll( ketama_continuum* contptr, char* filename )
         }
 
         (*contptr)->numpoints = *data;
+        (*contptr)->numservers = *(++data);
+        (*contptr)->memtotal = *(++data);
         (*contptr)->modtime = ++data;
         (*contptr)->array = data + sizeof( void* );
+        (*contptr)->slist = data + sizeof( void* ) + ( sizeof( mcs ) * (*contptr)->numpoints / sizeof(int) );
         fmodtime = (time_t*)( (*contptr)->modtime );
 
         track_shm_data(data);

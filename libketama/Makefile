@@ -33,3 +33,10 @@ uninstall:
 	rm $(PREFIX)/include/ketama.h
 
 deinstall: uninstall
+
+
+add_rm_test:
+	gcc $(CFLAGS) -g -DDEBUG -o md5-debug.o -c md5.c
+	gcc $(CFLAGS) -g -DDEBUG -o ketama-debug.o -c ketama.c
+	gcc $(CFLAGS) -g -DDEBUG -o add-rm-test-debug.o -c add_rm_test.c
+	gcc $(CFLAGS) -I. -O3 -lm -g -msize -o add_rm_test ketama-debug.o md5-debug.o add-rm-test-debug.o
