@@ -254,7 +254,7 @@ PHP_FUNCTION(ketama_get_server)
 /* }}} */
 
 
-/* {{{ proto int ketama_add_server(string $address, int $memory, resource $continuum)
+/* {{{ proto void ketama_add_server(string $address, int $memory, resource $continuum)
    Adds a server to the ring */
 PHP_FUNCTION(ketama_add_server)
 {
@@ -270,12 +270,12 @@ PHP_FUNCTION(ketama_add_server)
 	}
 
 	ZEND_FETCH_RESOURCE( continuum, ketama_continuum, &zcontinuum, -1, "ketama continuum", le_ketama_continuum );
-	return_value = ketama_add_server( address, memory, continuum );
+	ketama_add_server( address, memory, continuum );
 }
 /* }}} */
 
 
-/* {{{ proto int ketama_remove_server(string $address, resource $continuum)
+/* {{{ proto void ketama_remove_server(string $address, resource $continuum)
    Removes a server from the ring */
 PHP_FUNCTION(ketama_remove_server)
 {
@@ -290,7 +290,7 @@ PHP_FUNCTION(ketama_remove_server)
 	}
 
 	ZEND_FETCH_RESOURCE( continuum, ketama_continuum, &zcontinuum, -1, "ketama continuum", le_ketama_continuum );
-	return_value = ketama_remove_server( address, continuum );
+	ketama_remove_server( address, continuum );
 }
 /* }}} */
 

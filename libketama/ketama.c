@@ -605,7 +605,7 @@ ketama_create_continuum( key_t key, char* filename )
 }
 
 
-int
+void
 ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum cont)
 {
     key_t key;
@@ -631,7 +631,7 @@ ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum cont)
     if ( !load_continuum( key, slist, numservers, memory, 0 ) )
     {
         sprintf( k_error, "Failed to load the continuum" );
-        return 0;
+        return;
     }
     
     shmid = shmget( key, MC_SHMSIZE, 0 ); // read only attempt.
@@ -647,12 +647,9 @@ ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum cont)
     cont->slist = data + sizeof( void* ) + ( sizeof( mcs ) * cont->numpoints / sizeof(int) );
 
     track_shm_data(data);
-
-
-    return 1;
 }
 
-int
+void
 ketama_remove_server( char* addr, ketama_continuum cont)
 {
     key_t key;
@@ -678,7 +675,7 @@ ketama_remove_server( char* addr, ketama_continuum cont)
     if ( !load_continuum( key, slist, numservers, memory, 0 ) )
     {
         sprintf( k_error, "Failed to load the continuum" );
-        return 0;
+        return;
     }
     
     shmid = shmget( key, MC_SHMSIZE, 0 ); // read only attempt.
@@ -694,9 +691,6 @@ ketama_remove_server( char* addr, ketama_continuum cont)
     cont->slist = data + sizeof( void* ) + ( sizeof( mcs ) * cont->numpoints / sizeof(int) );
 
     track_shm_data(data);
-
-
-    return 1;
 }
 
 

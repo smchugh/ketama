@@ -92,15 +92,13 @@ mcs* ketama_get_server( char*, ketama_continuum );
 /** \brief Adds a server to the ring
   * \param addr The address of the server that you want to add.
   * \param newmemory The amount of allocated memory from this server to be added to the cluster
-  * \param cont Pointer to the continuum which we will refresh.
-  * \return 0 on failure, 1 on success. */
-int ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum cont);
+  * \param cont Pointer to the continuum which we will refresh. */
+void ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum cont);
 
 /** \brief Removes a server from the ring
   * \param addr The address of the server that you want to add.
-  * \param cont Pointer to the continuum which we will refresh.
-  * \return 0 on failure, 1 on success. */
-int ketama_remove_server( char* addr, ketama_continuum cont);
+  * \param cont Pointer to the continuum which we will refresh. */
+void ketama_remove_server( char* addr, ketama_continuum cont);
 
 /** \brief Removes a server from the ring
   * \param addr The address of the server that you want to remove.
