@@ -261,7 +261,7 @@ PHP_FUNCTION(ketama_add_server)
 	zval *zcontinuum;
 	ketama_continuum continuum;
 	char *address;
-	int address_len;
+	long address_len;
 	unsigned long memory;
 
 	if ( zend_parse_parameters( ZEND_NUM_ARGS() TSRMLS_CC, "slr", &address, &address_len, &memory, &zcontinuum ) == FAILURE )
