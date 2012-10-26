@@ -334,9 +334,9 @@ read_server_definitions( char* filename, unsigned int* count, unsigned long* mem
 serverinfo*
 add_serverinfo( char* addr, unsigned long newmemory, ketama_continuum cont, unsigned int* count, unsigned long* memory)
 {
-    unsigned int i, numservers = *count;
-    unsigned long memtotal = *memory;
-    serverinfo newserver, *newslist = 0, *slist = cont->slist;
+    unsigned int i, numservers, addr_len = 0;
+    unsigned long memtotal;
+    serverinfo newserver, *newslist = 0, (*slist)[cont->numservers] = cont->slist;
     newserver.memory = 0;
 
     // get the current number of servers and available total memory
@@ -344,22 +344,23 @@ add_serverinfo( char* addr, unsigned long newmemory, ketama_continuum cont, unsi
     memtotal = cont->memtotal;
 
     // populate the new server struct
-    if ( ( strlen( addr ) - 1 ) < 23 ) {
-        strncpy( newserver.addr, addr, strlen(addr) );
-        newserver.addr[ strlen(addr) ] = '\0';
-        newserver.memory = newmemory;
+    addr_len = strlen( addr );
+    if ( addr_len > 21 ) {
+        addr_len = 21;
     }
+    strncpy( newserver.addr, addr, addr_len );
+    newserver.addr[ addr_len ] = '\0';
+    newserver.memory = newmemory;
 
     // add the server to the list
-    newslist = (serverinfo*) realloc(newslist, sizeof( serverinfo ) * ( numservers + 1 ) );
+    newslist = (serverinfo*) malloc( sizeof( serverinfo ) * ( numservers + 1 ) );
     for (i = 0; i < numservers; i++)
     {
-        newslist[i] = slist[i];
+        memcpy( &newslist[i], &(*slist)[i], sizeof(serverinfo) );
     }
-    newslist[i] = newserver;
+    memcpy( &newslist[numservers], &newserver, sizeof(serverinfo) );
     numservers++;
     memtotal += newmemory;
-
 
     *count = numservers;
     *memory = memtotal;
@@ -376,23 +377,23 @@ add_serverinfo( char* addr, unsigned long newmemory, ketama_continuum cont, unsi
 serverinfo*
 remove_serverinfo( char* addr, ketama_continuum cont, unsigned int* count, unsigned long* memory)
 {
-    unsigned int i, j, numservers = *count;
-    unsigned long memtotal = *memory, oldmemory = 0;
-    serverinfo *slist = cont->slist;
+    unsigned int i, j, numservers;
+    unsigned long memtotal, oldmemory = 0;
+    serverinfo (*slist)[cont->numservers] = cont->slist;
     serverinfo *newslist = 0;
 
     // get the current number of servers and available total memory
     numservers = cont->numservers - 1;
     memtotal = cont->memtotal;
 
-    newslist = (serverinfo*) realloc(newslist, sizeof( serverinfo ) * ( numservers ) );
+    newslist = (serverinfo*) malloc( sizeof( serverinfo ) * ( numservers ) );
     for (i = 0, j = 0; i < numservers + 1; i++)
     {
-        if (!strcmp(addr, slist[i].addr)) {
-            oldmemory = slist[i].memory;
+        if (!strcmp(addr, (*slist)[i].addr)) {
+            oldmemory = (*slist)[i].memory;
         } else {
             if (j < numservers) {
-                newslist[j] = slist[i];
+                memcpy( &newslist[j], &(*slist)[i], sizeof(serverinfo) );
             }
             j++;
         }
@@ -400,8 +401,8 @@ remove_serverinfo( char* addr, ketama_continuum cont, unsigned int* count, unsig
     // if we didn't find the server, don't remove anything and throw a warning
     if (i == j) {
         newslist = (serverinfo*) realloc(newslist, sizeof( serverinfo ) * ( ++numservers ) );
-        newslist[j-1] = slist[i-1];
-        sprintf( k_error, "%s not found and not removed!", addr );
+        memcpy( &newslist[numservers-1], &(*slist)[numservers-1], sizeof(serverinfo) );
+        sprintf( k_error, "%s not found and not removed!", addr);
     }
     
     memtotal -= oldmemory;
