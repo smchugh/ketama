@@ -222,39 +222,35 @@ read_server_line( char* line )
     server.memory = 0;
 
     char* tok = strtok( line, delim );
-    if ( ( strlen( tok ) - 1 ) < 23 )
+
+    char* mem = 0;
+    char* endptr = 0;
+
+    snprintf( server.addr, sizeof(server.addr), "%*s", (int) sizeof(tok), tok );
+
+    tok = strtok( 0, delim );
+    /* We do not check for a NULL return earlier because strtok will
+     * always return at least the first token; hence never return NULL.
+     */
+    if ( tok == 0 )
     {
-        char* mem = 0;
-        char* endptr = 0;
+        snprintf( k_error, sizeof(k_error), "%s", "Unable to find delimiter" );
+        server.memory = 0;
+    }
+    else
+    {
+        mem = (char *)malloc( strlen( tok ) );
+        snprintf( mem, strlen( tok ), "%*s", (int) strlen( tok ), tok );
 
-        strncpy( server.addr, tok, strlen( tok ) );
-        server.addr[ strlen( tok ) ] = '\0';
-
-        tok = strtok( 0, delim );
-        /* We do not check for a NULL return earlier because strtok will
-         * always return at least the first token; hence never return NULL.
-         */
-        if ( tok == 0 )
+        errno = 0;
+        server.memory = strtol( mem, &endptr, 10 );
+        if ( errno == ERANGE || endptr == mem )
         {
-            strcpy( k_error, "Unable to find delimiter" );
+            snprintf( k_error, sizeof(k_error), "%s", "Invalid memory value" );
             server.memory = 0;
         }
-        else
-        {
-            mem = (char *)malloc( strlen( tok ) );
-            strncpy( mem, tok, strlen( tok ) - 1 );
-            mem[ strlen( tok ) - 1 ] = '\0';
 
-            errno = 0;
-            server.memory = strtol( mem, &endptr, 10 );
-            if ( errno == ERANGE || endptr == mem )
-            {
-                strcpy( k_error, "Invalid memory value" );
-                server.memory = 0;
-            }
-
-            free( mem );
-        }
+        free( mem );
     }
 
     return server;
@@ -273,14 +269,13 @@ read_server_definitions( char* filename, unsigned int* count, unsigned long* mem
     unsigned int lineno = 0;
     unsigned int numservers = 0;
     unsigned long memtotal = 0;
-    char * ret;
 
     FILE* fi = fopen( filename, "r" );
     while ( fi && !feof( fi ) )
     {
         char sline[128] = "";
 
-        ret = fgets( sline, 127, fi );
+        fgets( sline, 127, fi );
         lineno++;
 
         if ( strlen( sline ) < 2 || sline[0] == '#' )
@@ -301,15 +296,14 @@ read_server_definitions( char* filename, unsigned int* count, unsigned long* mem
              */
             *count = 1;
             free( slist );
-            sprintf( k_error, "%s (line %d in %s)",
-                k_error, lineno, filename );
+            snprintf( k_error, sizeof(k_error), "%*s (line %d in %*s)", (int) sizeof(k_error), k_error, lineno, (int) sizeof(filename), filename );
             return 0;
         }
     }
 
     if ( !fi )
     {
-        sprintf( k_error, "File %s doesn't exist!", filename );
+        snprintf( k_error, sizeof(k_error), "File %*s doesn't exist!", (int) sizeof(filename), filename );
 
         *count = 0;
         return 0;
@@ -348,8 +342,7 @@ add_serverinfo( char* addr, unsigned long newmemory, ketama_continuum cont, unsi
     if ( addr_len > 21 ) {
         addr_len = 21;
     }
-    strncpy( newserver.addr, addr, addr_len );
-    newserver.addr[ addr_len ] = '\0';
+    snprintf( newserver.addr, sizeof(newserver.addr), "%*s", (int) sizeof(addr), addr );
     newserver.memory = newmemory;
 
     // add the server to the list
@@ -402,7 +395,7 @@ remove_serverinfo( char* addr, ketama_continuum cont, unsigned int* count, unsig
     if (i == j) {
         newslist = (serverinfo*) realloc(newslist, sizeof( serverinfo ) * ( ++numservers ) );
         memcpy( &newslist[numservers-1], &(*slist)[numservers-1], sizeof(serverinfo) );
-        sprintf( k_error, "%s not found and not removed!", addr);
+        snprintf( k_error, sizeof(k_error), "%*s not found and not removed!", (int) sizeof(addr), addr);
     }
     
     memtotal -= oldmemory;
@@ -469,7 +462,7 @@ ketama_get_server( char* key, ketama_continuum cont )
   * \param modtime File modtime
   * \return 0 on failure, 1 on success. */
 int
-load_continuum(key_t key, serverinfo* slist, unsigned int numservers, unsigned long memory, time_t modtime)
+load_continuum(key_t key, serverinfo** slist, unsigned int numservers, unsigned long memory, time_t modtime)
 {
     int shmid;
     int* data;  /* Pointer to shmem location */
@@ -481,18 +474,17 @@ load_continuum(key_t key, serverinfo* slist, unsigned int numservers, unsigned l
 
     for( i = 0; i < numservers; i++ )
     {
-        float pct = (float)slist[i].memory / (float)memory;
+        float pct = (float) (*slist)[i].memory / (float)memory;
         unsigned int ks = floorf( pct * 40.0 * (float)numservers );
 #ifdef DEBUG
         int hpct = floorf( pct * 100.0 );
 
         syslog( LOG_INFO, "Server no. %d: %s (mem: %lu = %u%% or %d of %d)\n",
-            i, slist[i].addr, slist[i].memory, hpct, ks, numservers * 40 );
+            i, (*slist)[i].addr, (*slist)[i].memory, hpct, ks, numservers * 40 );
 #endif
 
         // copy over the slist to usable memory
-        servers[i].memory = slist[i].memory;
-        strcpy (servers[i].addr, slist[i].addr);
+        memcpy( &servers[i], &(*slist)[i], sizeof(serverinfo) );
 
         for( k = 0; k < ks; k++ )
         {
@@ -500,7 +492,7 @@ load_continuum(key_t key, serverinfo* slist, unsigned int numservers, unsigned l
             char ss[30];
             unsigned char digest[16];
 
-            sprintf( ss, "%s-%d", slist[i].addr, k );
+            snprintf( ss, sizeof(ss), "%*s-%d", (int) sizeof((*slist)[i].addr), (*slist)[i].addr, k );
             ketama_md5_digest( ss, digest );
 
             /* Use successive 4-bytes from hash as numbers
@@ -513,12 +505,12 @@ load_continuum(key_t key, serverinfo* slist, unsigned int numservers, unsigned l
                                       | ( digest[1+h*4] <<  8 )
                                       |   digest[h*4];
 
-                memcpy( continuum[cont].ip, slist[i].addr, 22 );
+                snprintf( continuum[cont].ip, sizeof(continuum[cont].ip), "%*s", (int) sizeof((*slist)[i].addr), (*slist)[i].addr);
                 cont++;
             }
         }
     }
-    free( slist );
+    free( *slist );
 
     /* Sorts in ascending order of "point" */
     qsort( (void*) &continuum, cont, sizeof( mcs ), (compfn)ketama_compare );
@@ -530,7 +522,7 @@ load_continuum(key_t key, serverinfo* slist, unsigned int numservers, unsigned l
     data = shmat( shmid, (void *)0, 0 );
     if ( data == (void *)(-1) )
     {
-        strcpy( k_error, "Can't open shmmem for writing." );
+        snprintf( k_error, sizeof(k_error), "%s", "Can't open shmmem for writing." );
         return 0;
     }
 
@@ -539,7 +531,7 @@ load_continuum(key_t key, serverinfo* slist, unsigned int numservers, unsigned l
     memcpy( data + 2, &memory, sizeof( int ) );
     memcpy( data + 3, &modtime, sizeof( time_t ) );
     memcpy( data + 3 + sizeof( void* ), &continuum, sizeof( mcs ) * cont );
-    memcpy( data + 3 + sizeof( void* ) + ( sizeof( mcs ) * cont / sizeof(int) ), &servers, sizeof( serverinfo ) * numservers );
+    memcpy( data + 3 + sizeof( void* ) + ( sizeof( mcs ) * cont / sizeof(int) ), servers, sizeof( serverinfo ) * numservers );
 
 
     /* We detatch here because we will re-attach in read-only
@@ -549,7 +541,7 @@ load_continuum(key_t key, serverinfo* slist, unsigned int numservers, unsigned l
 #else
     if ( shmdt( data ) == -1 )
 #endif
-        strcpy( k_error, "Error detatching from shared memory!" );
+        snprintf( k_error, sizeof(k_error), "%s", "Error detatching from shared memory!" );
 
     return 1;
 }
@@ -581,7 +573,7 @@ ketama_create_continuum( key_t key, char* filename )
      * and we need to set one. */
     if ( numservers < 1 )
     {
-        sprintf( k_error, "No valid server definitions in file %s", filename );
+        snprintf( k_error, sizeof(k_error), "No valid server definitions in file %*s", (int) sizeof(filename), filename );
         return 0;
     }
     else if ( slist == 0 )
@@ -596,9 +588,9 @@ ketama_create_continuum( key_t key, char* filename )
 
      time_t modtime = file_modtime( filename );
 
-     if ( !load_continuum( key, slist, numservers, memory, modtime ) )
+     if ( !load_continuum( key, &slist, numservers, memory, modtime ) )
      {
-        sprintf( k_error, "Failed to load the continuum" );
+        snprintf( k_error, sizeof(k_error), "%s", "Failed to load the continuum" );
         return 0;
      }
     
@@ -629,9 +621,9 @@ ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum cont)
 
     key = file_key;
 
-    if ( !load_continuum( key, slist, numservers, memory, 0 ) )
+    if ( !load_continuum( key, &slist, numservers, memory, 0 ) )
     {
-        sprintf( k_error, "Failed to load the continuum" );
+        snprintf( k_error, sizeof(k_error), "%s", "Failed to load the continuum" );
         return;
     }
     
@@ -673,9 +665,9 @@ ketama_remove_server( char* addr, ketama_continuum cont)
 
     key = file_key;
 
-    if ( !load_continuum( key, slist, numservers, memory, 0 ) )
+    if ( !load_continuum( key, &slist, numservers, memory, 0 ) )
     {
-        sprintf( k_error, "Failed to load the continuum" );
+        snprintf( k_error, sizeof(k_error), "%s", "Failed to load the continuum" );
         return;
     }
     
@@ -720,7 +712,7 @@ ketama_roll( ketama_continuum* contptr, char* filename )
     file_key = key;
     if ( key == -1 )
     {
-        sprintf( k_error, "Invalid filename specified: %s", filename );
+        snprintf( k_error, sizeof(k_error), "Invalid filename specified: %*s", (int) sizeof(filename), filename );
         return 0;
     }
 
@@ -782,7 +774,7 @@ ketama_roll( ketama_continuum* contptr, char* filename )
 
         if ( data == (void *)(-1) )
         {
-            strcpy( k_error, "Failed miserably to get pointer to shmemdata!" );
+            snprintf( k_error, sizeof(k_error), "%s", "Failed miserably to get pointer to shmemdata!" );
             return 0;
         }
 

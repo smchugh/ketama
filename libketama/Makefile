@@ -2,8 +2,8 @@ PREFIX=$(DESTDIR)/usr
 CFLAGS+=-fPIC -W -Wall -Werror
 
 build:
-	gcc $(CFLAGS) -O3 -c md5.c
-	gcc $(CFLAGS) -O3 -c ketama.c
+	gcc $(CFLAGS) -c md5.c
+	gcc $(CFLAGS) -c ketama.c
 	gcc -shared -Wl,-soname,libketama.so.1 -lm -o libketama.so.1 ketama.o md5.o
 
 debug:
