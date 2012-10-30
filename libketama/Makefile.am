@@ -1,11 +1,11 @@
 PREFIX=$(prefix)
-CFLAGS+=-fPIC -W -Wall -Werror
+CFLAGS=-pipe -fno-strict-aliasing -fPIC -W -Wall -Werror
 
 all: build
 
 build:
-	gcc $(CFLAGS) -O3 -c md5.c
-	gcc $(CFLAGS) -O3 -c ketama.c
+	gcc $(CFLAGS) -c md5.c
+	gcc $(CFLAGS) -c ketama.c
 	gcc $(LDFLAGS) -o libketama.so.1 ketama.o md5.o
 
 debug:
