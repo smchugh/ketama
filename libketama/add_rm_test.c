@@ -22,7 +22,7 @@ int main(int argc, char **argv)
   ketama_roll( &c, *++argv );
 
   int i, count = c->numservers;
-  serverinfo (*slist)[count] = c->slist;
+  serverinfo (*slist)[count] = &(c->slist);
 
   printf("# servers: %u Total Memory: %lu\n", c->numservers, c->memtotal);
 
@@ -33,7 +33,7 @@ int main(int argc, char **argv)
   printf( "\n\n\n");
 
   count = 10;
-  mcs (*mcsarr)[count] = c->array;
+  mcs (*mcsarr)[count] = &(c->array);
 
   for ( i = 0; i < count; i++ )
   {
@@ -49,7 +49,7 @@ int main(int argc, char **argv)
   ketama_remove_server( "10.0.1.82:11211", c);
 
   count = c->numservers;
-  slist = c->slist;
+  slist = &(c->slist);
 
   printf("# servers: %u Total Memory: %lu\n", c->numservers, c->memtotal);
 
@@ -60,7 +60,7 @@ int main(int argc, char **argv)
   printf( "\n\n\n");
 
   count = 10;
-  mcsarr = c->array;
+  mcsarr = &(c->array);
 
   for ( i = 0; i < count; i++ )
   {
@@ -76,7 +76,7 @@ int main(int argc, char **argv)
   ketama_add_server( "10.0.1.82:11211", 300, c);
 
   count = c->numservers;
-  slist = c->slist;
+  slist = &(c->slist);
 
   printf("# servers: %u Total Memory: %lu\n", c->numservers, c->memtotal);
 
@@ -87,7 +87,7 @@ int main(int argc, char **argv)
   printf( "\n\n\n");
 
   count = 10;
-  mcsarr = c->array;
+  mcsarr = &(c->array);
 
   for ( i = 0; i < count; i++ )
   {

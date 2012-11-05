@@ -14,7 +14,7 @@ AC_PROG_LN_S
 AC_CANONICAL_HOST
 case "${host}" in
   *-*-freebsd*)
-	CFLAGS="-pipe -fno-strict-aliasing"
+	CFLAGS="$CFLAGS"
 	LDFLAGS="$LDFLAGS -shared -lm -Wl,-soname,libketama.so.1"
 	;;
   *-*-linux*)

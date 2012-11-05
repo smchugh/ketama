@@ -479,8 +479,8 @@ uninstall-am:
 all: build
 
 build:
-	gcc $(CFLAGS) -c md5.c
-	gcc $(CFLAGS) -c ketama.c
+	gcc $(CFLAGS) -O3 -c md5.c
+	gcc $(CFLAGS) -O3 -c ketama.c
 	gcc $(LDFLAGS) -o libketama.so.1 ketama.o md5.o
 
 debug:

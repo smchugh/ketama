@@ -31,7 +31,8 @@
 
 #include <sys/sem.h>    /* semaphore functions and structs. */
 
-#define MC_SHMSIZE  524288  // 512KB should be ample.
+#define MAX_SERVERS  125  // Set max of server to calculate the size of the shared memory (MC_SHMSIZE)
+#define MAX_MCS_POINTS  MAX_SERVERS * 160
 
 #ifdef __cplusplus /* If this is a C++ compiler, use C linkage */
 extern "C" {
@@ -65,12 +66,19 @@ typedef struct
     int numpoints;
     int numservers;
     unsigned long memtotal;
-    void* modtime;
-    void* array; //array of mcs structs
-    void* slist; //array of serverinfo structs
+    time_t modtime;
+    mcs array[MAX_MCS_POINTS]; //array of mcs structs
+    serverinfo slist[MAX_SERVERS]; //array of serverinfo structs
 } continuum;
 
 typedef continuum* ketama_continuum;
+
+
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__linux__)
+    #define MC_SHMSIZE  sizeof(continuum) + sizeof(_SC_PAGE_SIZE) - (sizeof(continuum) % sysconf(_SC_PAGE_SIZE))
+#else
+    #define MC_SHMSIZE  sizeof(continuum) + 40168192
+#endif
 
 
 /** \brief Get a continuum struct that contains a reference to the server list.

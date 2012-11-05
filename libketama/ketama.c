@@ -38,9 +38,7 @@
 #include <math.h>           /* floor & floorf                       */
 #include <sys/stat.h>       /* various type definitions             */
 #include <sys/shm.h>        /* shared memory functions and structs  */
-#ifdef DEBUG
 #include <syslog.h>
-#endif
 
 
 char k_error[255] = "";
@@ -60,31 +58,31 @@ key_t file_key = 0;  // keep hold of the server list file key so we can reuse it
 
 static void
 init_sem_id_tracker() {
-    sem_ids = malloc(sizeof(int)*1024);
+    sem_ids = malloc(sizeof(int)*sem_ids_size);
 }
 
 static void
 init_shm_id_tracker() {
-    shm_ids = malloc(sizeof(int)*1024);
+    shm_ids = malloc(sizeof(int)*shm_ids_size);
 }
 
 static void
 init_shm_data_tracker() {
-    shm_data = malloc(sizeof(int*)*1024);
+    shm_data = malloc(sizeof(int*)*shm_data_size);
 }
 
 static void
 track_shm_data(int *data) {
     if (num_data == shm_data_size) {
-        void *tmp = realloc(shm_data, sizeof(int*)*(shm_data_size + 1024));
+        void *tmp = realloc(shm_data, sizeof(int*) * shm_data_size * 2);
         if (tmp != NULL) {
-    	    shm_data = tmp;
+            shm_data = tmp;
         } else {
-            sprintf( k_error, "Cannot realloc shm data tracker");
+            snprintf( k_error, sizeof(k_error), "%s", "Cannot realloc shm data tracker" );
             exit(1);
         }
 
-        shm_data_size += 1024;
+        shm_data_size *= 2;
     }
 
     shm_data[num_data] = data;
@@ -94,15 +92,15 @@ track_shm_data(int *data) {
 static void
 track_sem_id(int semid) {
     if (num_sem_ids == sem_ids_size) {
-    void *tmp = realloc(sem_ids, sizeof(int)*(sem_ids_size + 1024));
+    void *tmp = realloc(sem_ids, sizeof(int) * sem_ids_size * 2);
         if (tmp != NULL) {
             sem_ids = tmp;
         } else {
-            sprintf( k_error, "Cannot realloc semids");
+            snprintf( k_error, sizeof(k_error), "%s", "Cannot realloc semids" );
             exit(1);
         }
 
-        sem_ids_size += 1024;
+        sem_ids_size *= 2;
     }
 
     sem_ids[num_sem_ids] = semid;
@@ -112,15 +110,15 @@ track_sem_id(int semid) {
 static void
 track_shm_id(int shmid) {
     if (num_shm_ids == shm_ids_size) {
-        void *tmp = realloc(shm_ids, sizeof(int)*(shm_ids_size + 1024));
+        void *tmp = realloc(shm_ids, sizeof(int) * shm_ids_size * 2);
         if (tmp != NULL) {
             shm_ids = tmp;
         } else {
-            sprintf( k_error, "Cannot realloc shmids");
+            snprintf( k_error, sizeof(k_error), "%s", "Cannot realloc shmids" );
             exit(1);
         }
 
-        shm_ids_size += 1024;
+        shm_ids_size *= 2;
     }
 
     shm_ids[num_shm_ids] = shmid;
@@ -162,7 +160,6 @@ ketama_sem_init( key_t key )
     int sem_set_id;
 
     sem_set_id = semget( key, 1, 0 );
-	track_sem_id(sem_set_id);
 
     if ( sem_set_id == -1 )
     {
@@ -170,14 +167,17 @@ ketama_sem_init( key_t key )
         sem_set_id = semget( key, 1, IPC_CREAT | 0666 );
         track_sem_id(sem_set_id);
 
-		if ( sem_set_id == -1 )
+        if ( sem_set_id == -1 )
         {
-            strcpy( k_error, "Could not open semaphore!" );
+            snprintf( k_error, sizeof(k_error), "%s", "Could not open semaphore!" );
             return 0;
         }
 
         ketama_sem_unlock( sem_set_id );
     }
+
+    // track the semaphore if it exists
+    track_sem_id(sem_set_id);
 
     return sem_set_id;
 }
@@ -185,7 +185,7 @@ ketama_sem_init( key_t key )
 
 /* ketama.h does not expose this function */
 void
-ketama_md5_digest( char* inString, unsigned char md5pword[16] )
+ketama_md5_digest( char* inString, unsigned char *md5pword )
 {
     md5_state_t md5state;
 
@@ -201,59 +201,57 @@ ketama_md5_digest( char* inString, unsigned char md5pword[16] )
 static time_t
 file_modtime( char* filename )
 {
-    struct tm* clock;
+    (void) filename;
     struct stat attrib;
 
     stat( filename, &attrib );
-    clock = gmtime( &( attrib.st_mtime ) );
 
-    return mktime( clock );
+    return attrib.st_mtime;
 }
 
 
 /** \brief Retrieve a serverinfo struct for one a sever definition.
-  * \param line The entire server definition in plain-text.
-  * \return A serverinfo struct, parsed from the given definition. */
-static serverinfo
-read_server_line( char* line )
+  * \param line The entire server definition in plain-text. */
+static void
+read_server_line( char* line, serverinfo* server )
 {
     char* delim = "\t ";
-    serverinfo server;
-    server.memory = 0;
+    server->memory = 0;
+    char* saveptr = line;
 
-    char* tok = strtok( line, delim );
+    char* tok = strtok_r( line, delim, &saveptr );
 
-    char* mem = 0;
-    char* endptr = 0;
+    char* mem = NULL;
+    char* endptr = NULL;
 
-    snprintf( server.addr, sizeof(server.addr), "%*s", (int) sizeof(tok), tok );
+    snprintf( server->addr, sizeof(server->addr), "%s", tok );
 
-    tok = strtok( 0, delim );
+    tok = strtok_r( NULL, delim, &saveptr );
+
     /* We do not check for a NULL return earlier because strtok will
      * always return at least the first token; hence never return NULL.
      */
     if ( tok == 0 )
     {
         snprintf( k_error, sizeof(k_error), "%s", "Unable to find delimiter" );
-        server.memory = 0;
+        syslog( LOG_INFO, "Unable to find delimiter.\n" );
+        server->memory = 0;
     }
     else
     {
-        mem = (char *)malloc( strlen( tok ) );
-        snprintf( mem, strlen( tok ), "%*s", (int) strlen( tok ), tok );
+        mem = strdup( tok );
 
         errno = 0;
-        server.memory = strtol( mem, &endptr, 10 );
+        server->memory = strtol( mem, &endptr, 10 );
         if ( errno == ERANGE || endptr == mem )
         {
             snprintf( k_error, sizeof(k_error), "%s", "Invalid memory value" );
-            server.memory = 0;
+            syslog( LOG_INFO, "Invalid memory value.\n" );
+            server->memory = 0;
         }
 
         free( mem );
     }
-
-    return server;
 }
 
 
@@ -263,26 +261,30 @@ read_server_line( char* line )
   * \param memory The value of this pointer will be set to the total amount of allocated memory across all servers.
   * \return A serverinfo array, containing all servers that could be parsed from the given file. */
 static serverinfo*
-read_server_definitions( char* filename, unsigned int* count, unsigned long* memory )
+read_server_definitions( char* filename, int* count, unsigned long* memory )
 {
-    serverinfo* slist = 0;
+    serverinfo* slist = NULL;
     unsigned int lineno = 0;
-    unsigned int numservers = 0;
+    int numservers = 0;
     unsigned long memtotal = 0;
+    serverinfo server;
 
     FILE* fi = fopen( filename, "r" );
     while ( fi && !feof( fi ) )
     {
-        char sline[128] = "";
+        char sline[128];
 
-        fgets( sline, 127, fi );
+        char* line = fgets( sline, sizeof(sline), fi );
+        if (line == NULL) {
+            break;
+        }
         lineno++;
 
         if ( strlen( sline ) < 2 || sline[0] == '#' )
             continue;
 
-        serverinfo server = read_server_line( sline );
-        if ( server.memory > 0 && strlen( server.addr ) )
+        read_server_line( sline, &server );
+        if ( server.memory > 0 && strlen( server.addr ) > 0 )
         {
             slist = (serverinfo*)realloc( slist, sizeof( serverinfo ) * ( numservers + 1 ) );
             memcpy( &slist[numservers], &server, sizeof( serverinfo ) );
@@ -296,14 +298,19 @@ read_server_definitions( char* filename, unsigned int* count, unsigned long* mem
              */
             *count = 1;
             free( slist );
-            snprintf( k_error, sizeof(k_error), "%*s (line %d in %*s)", (int) sizeof(k_error), k_error, lineno, (int) sizeof(filename), filename );
+            snprintf( k_error, sizeof(k_error), "%s (line %d in %s)", k_error, lineno, filename );
+            syslog( LOG_INFO, "Server %s with memory %lu could not be loaded.\n", server.addr, server.memory );
+            if (fi != NULL) {
+                fclose( fi );
+            }
             return 0;
         }
     }
 
     if ( !fi )
     {
-        snprintf( k_error, sizeof(k_error), "File %*s doesn't exist!", (int) sizeof(filename), filename );
+        snprintf( k_error, sizeof(k_error), "File %s doesn't exist!", filename );
+        syslog( LOG_INFO, "File %s doesn't exist!\n", filename );
 
         *count = 0;
         return 0;
@@ -326,11 +333,11 @@ read_server_definitions( char* filename, unsigned int* count, unsigned long* mem
   * \param memory The value of this pointer will be set to the total amount of allocated memory across all servers.
   * \return The temporary address of the list of servers with the new server added in */
 serverinfo*
-add_serverinfo( char* addr, unsigned long newmemory, ketama_continuum cont, unsigned int* count, unsigned long* memory)
+add_serverinfo( char* addr, unsigned long newmemory, ketama_continuum cont, int* count, unsigned long* memory)
 {
-    unsigned int i, numservers, addr_len = 0;
+    int i, numservers;
     unsigned long memtotal;
-    serverinfo newserver, *newslist = 0, (*slist)[cont->numservers] = cont->slist;
+    serverinfo newserver, *newslist = 0;
     newserver.memory = 0;
 
     // get the current number of servers and available total memory
@@ -338,18 +345,14 @@ add_serverinfo( char* addr, unsigned long newmemory, ketama_continuum cont, unsi
     memtotal = cont->memtotal;
 
     // populate the new server struct
-    addr_len = strlen( addr );
-    if ( addr_len > 21 ) {
-        addr_len = 21;
-    }
-    snprintf( newserver.addr, sizeof(newserver.addr), "%*s", (int) sizeof(addr), addr );
+    snprintf( newserver.addr, sizeof(newserver.addr), "%s", addr );
     newserver.memory = newmemory;
 
     // add the server to the list
     newslist = (serverinfo*) malloc( sizeof( serverinfo ) * ( numservers + 1 ) );
     for (i = 0; i < numservers; i++)
     {
-        memcpy( &newslist[i], &(*slist)[i], sizeof(serverinfo) );
+        memcpy( &newslist[i], &cont->slist[i], sizeof(serverinfo) );
     }
     memcpy( &newslist[numservers], &newserver, sizeof(serverinfo) );
     numservers++;
@@ -368,37 +371,40 @@ add_serverinfo( char* addr, unsigned long newmemory, ketama_continuum cont, unsi
   * \param memory The value of this pointer will be set to the total amount of allocated memory across all servers.
   * \return The temporary address of the list of servers with the new server added in */
 serverinfo*
-remove_serverinfo( char* addr, ketama_continuum cont, unsigned int* count, unsigned long* memory)
+remove_serverinfo( char* addr, ketama_continuum cont, int* count, unsigned long* memory)
 {
-    unsigned int i, j, numservers;
+    int i, j, numservers, rm_indx = -1;
     unsigned long memtotal, oldmemory = 0;
-    serverinfo (*slist)[cont->numservers] = cont->slist;
-    serverinfo *newslist = 0;
+    serverinfo *newslist;
 
     // get the current number of servers and available total memory
-    numservers = cont->numservers - 1;
+    numservers = cont->numservers;
     memtotal = cont->memtotal;
-
-    newslist = (serverinfo*) malloc( sizeof( serverinfo ) * ( numservers ) );
-    for (i = 0, j = 0; i < numservers + 1; i++)
+    
+    for (i = 0; i < numservers; i++)
     {
-        if (!strcmp(addr, (*slist)[i].addr)) {
-            oldmemory = (*slist)[i].memory;
-        } else {
-            if (j < numservers) {
-                memcpy( &newslist[j], &(*slist)[i], sizeof(serverinfo) );
-            }
-            j++;
+        if (!strcmp(addr, cont->slist[i].addr)) {
+            rm_indx = i;
         }
     }
     // if we didn't find the server, don't remove anything and throw a warning
-    if (i == j) {
-        newslist = (serverinfo*) realloc(newslist, sizeof( serverinfo ) * ( ++numservers ) );
-        memcpy( &newslist[numservers-1], &(*slist)[numservers-1], sizeof(serverinfo) );
-        snprintf( k_error, sizeof(k_error), "%*s not found and not removed!", (int) sizeof(addr), addr);
+    if (rm_indx == -1) {
+        newslist = NULL;
+        snprintf( k_error, sizeof(k_error), "%s not found and not removed!", addr);
+    } else {
+        newslist = (serverinfo*) malloc( sizeof( serverinfo ) * ( numservers - 1 ) );
+        for (i = 0, j = 0; i < numservers; i++)
+        {
+            if (i != rm_indx) {
+                memcpy( &newslist[j], &cont->slist[i], sizeof(serverinfo) );
+                j++;
+            } else {
+                oldmemory = cont->slist[i].memory;
+            }
+        }
+        numservers--;
+        memtotal -= oldmemory;
     }
-    
-    memtotal -= oldmemory;
 
     *count = numservers;
     *memory = memtotal;
@@ -425,7 +431,6 @@ ketama_get_server( char* key, ketama_continuum cont )
 {
     unsigned int h = ketama_hashi( key );
     int highp = cont->numpoints;
-    mcs (*mcsarr)[cont->numpoints] = cont->array;
     int lowp = 0, midp;
     unsigned int midval, midval1;
 
@@ -436,13 +441,13 @@ ketama_get_server( char* key, ketama_continuum cont )
         midp = (int)( ( lowp+highp ) / 2 );
 
         if ( midp == cont->numpoints )
-            return &( (*mcsarr)[0] ); // if at the end, roll back to zeroth
+            return &cont->array[0]; // if at the end, roll back to zeroth
 
-        midval = (*mcsarr)[midp].point;
-        midval1 = midp == 0 ? 0 : (*mcsarr)[midp-1].point;
+        midval = cont->array[midp].point;
+        midval1 = midp == 0 ? 0 : cont->array[midp-1].point;
 
         if ( h <= midval && h > midval1 )
-            return &( (*mcsarr)[midp] );
+            return &cont->array[midp];
 
         if ( midval < h )
             lowp = midp + 1;
@@ -450,7 +455,7 @@ ketama_get_server( char* key, ketama_continuum cont )
             highp = midp - 1;
 
         if ( lowp > highp )
-            return &( (*mcsarr)[0] );
+            return &cont->array[0];
     }
 }
 
@@ -462,29 +467,27 @@ ketama_get_server( char* key, ketama_continuum cont )
   * \param modtime File modtime
   * \return 0 on failure, 1 on success. */
 int
-load_continuum(key_t key, serverinfo** slist, unsigned int numservers, unsigned long memory, time_t modtime)
+load_continuum(key_t key, serverinfo* slist, int numservers, unsigned long memory, time_t modtime)
 {
-    int shmid;
-    int* data;  /* Pointer to shmem location */
+    int shmid, maxpoints = 160 * numservers;
+    ketama_continuum data;  /* Pointer to shmem location */
 
     /* Continuum will hold one mcs for each point on the circle: */
-    mcs continuum[ numservers * 160 ];
-    serverinfo servers[ numservers ];
-    unsigned int i, k, cont = 0;
+    mcs *ring = (mcs*) malloc( maxpoints * sizeof(mcs) );
+    serverinfo *servers = (serverinfo*) malloc( numservers * sizeof(serverinfo) );
+    int i, k, numpoints = 0;
 
     for( i = 0; i < numservers; i++ )
     {
-        float pct = (float) (*slist)[i].memory / (float)memory;
-        unsigned int ks = floorf( pct * 40.0 * (float)numservers );
-#ifdef DEBUG
+        float pct = (float) slist[i].memory / (float)memory;
+        int ks = floorf( pct * 40.0 * (float)numservers );
         int hpct = floorf( pct * 100.0 );
 
         syslog( LOG_INFO, "Server no. %d: %s (mem: %lu = %u%% or %d of %d)\n",
-            i, (*slist)[i].addr, (*slist)[i].memory, hpct, ks, numservers * 40 );
-#endif
+            i, slist[i].addr, slist[i].memory, hpct, ks, numservers * 40 );
 
         // copy over the slist to usable memory
-        memcpy( &servers[i], &(*slist)[i], sizeof(serverinfo) );
+        memcpy( &servers[i], &slist[i], sizeof(serverinfo) );
 
         for( k = 0; k < ks; k++ )
         {
@@ -492,7 +495,7 @@ load_continuum(key_t key, serverinfo** slist, unsigned int numservers, unsigned 
             char ss[30];
             unsigned char digest[16];
 
-            snprintf( ss, sizeof(ss), "%*s-%d", (int) sizeof((*slist)[i].addr), (*slist)[i].addr, k );
+            snprintf( ss, sizeof(ss), "%s-%d", slist[i].addr, k );
             ketama_md5_digest( ss, digest );
 
             /* Use successive 4-bytes from hash as numbers
@@ -500,38 +503,47 @@ load_continuum(key_t key, serverinfo** slist, unsigned int numservers, unsigned 
             int h;
             for( h = 0; h < 4; h++ )
             {
-                continuum[cont].point = ( digest[3+h*4] << 24 )
+                ring[numpoints].point = ( digest[3+h*4] << 24 )
                                       | ( digest[2+h*4] << 16 )
                                       | ( digest[1+h*4] <<  8 )
                                       |   digest[h*4];
 
-                snprintf( continuum[cont].ip, sizeof(continuum[cont].ip), "%*s", (int) sizeof((*slist)[i].addr), (*slist)[i].addr);
-                cont++;
+                snprintf( ring[numpoints].ip, sizeof(ring[numpoints].ip), "%s", slist[i].addr);
+                numpoints++;
+                if (numpoints > maxpoints) {
+                    snprintf( k_error, sizeof(k_error), "%s", "Tried to exceed mcs array bounds.\n" );
+                    syslog( LOG_INFO, "Error: Tried to exceed mcs array bounds.\n" );
+                    free( slist );
+                    return 0;
+                }
             }
         }
     }
-    free( *slist );
+    free( slist );
 
     /* Sorts in ascending order of "point" */
-    qsort( (void*) &continuum, cont, sizeof( mcs ), (compfn)ketama_compare );
+    qsort( (void*) ring, numpoints, sizeof( mcs ), (compfn)ketama_compare );
 
     /* Add data to shmmem */
     shmid = shmget( key, MC_SHMSIZE, 0644 | IPC_CREAT );
     track_shm_id(shmid);
 
-    data = shmat( shmid, (void *)0, 0 );
+    data = (ketama_continuum) shmat( shmid, (void *)0, 0 );
     if ( data == (void *)(-1) )
     {
         snprintf( k_error, sizeof(k_error), "%s", "Can't open shmmem for writing." );
         return 0;
     }
 
-    memcpy( data, &cont, sizeof( int ) );
-    memcpy( data + 1, &numservers, sizeof( int ) );
-    memcpy( data + 2, &memory, sizeof( int ) );
-    memcpy( data + 3, &modtime, sizeof( time_t ) );
-    memcpy( data + 3 + sizeof( void* ), &continuum, sizeof( mcs ) * cont );
-    memcpy( data + 3 + sizeof( void* ) + ( sizeof( mcs ) * cont / sizeof(int) ), servers, sizeof( serverinfo ) * numservers );
+    data->numpoints = numpoints;
+    data->numservers = numservers;
+    data->memtotal = memory;
+    data->modtime = modtime;
+    memcpy( data->array, ring, sizeof( mcs ) * numpoints );
+    memcpy( data->slist, servers, sizeof( serverinfo ) * numservers );
+
+    free(ring);
+    free(servers);
 
 
     /* We detatch here because we will re-attach in read-only
@@ -539,7 +551,7 @@ load_continuum(key_t key, serverinfo** slist, unsigned int numservers, unsigned 
 #ifdef SOLARIS
     if ( shmdt( (char *) data ) == -1 )
 #else
-    if ( shmdt( data ) == -1 )
+    if ( shmdt( (void *) data ) == -1 )
 #endif
         snprintf( k_error, sizeof(k_error), "%s", "Error detatching from shared memory!" );
 
@@ -563,7 +575,7 @@ ketama_create_continuum( key_t key, char* filename )
     }
 
     
-    unsigned int numservers = 0;
+    int numservers = 0;
     unsigned long memory;
     serverinfo* slist;
 
@@ -573,7 +585,8 @@ ketama_create_continuum( key_t key, char* filename )
      * and we need to set one. */
     if ( numservers < 1 )
     {
-        snprintf( k_error, sizeof(k_error), "No valid server definitions in file %*s", (int) sizeof(filename), filename );
+        snprintf( k_error, sizeof(k_error), "No valid server definitions in file %s", filename );
+        syslog( LOG_INFO, "No valid server definitions in file %s.\n", filename );
         return 0;
     }
     else if ( slist == 0 )
@@ -581,22 +594,18 @@ ketama_create_continuum( key_t key, char* filename )
         /* read_server_definitions must've set error message. */
         return 0;
     }
-#ifdef DEBUG
-     syslog( LOG_INFO, "Server definitions read: %u servers, total memory: %lu.\n",
-        numservers, memory );
-#endif
+    syslog( LOG_INFO, "Server definitions read: %u servers, total memory: %lu.\n", numservers, memory );
 
-     time_t modtime = file_modtime( filename );
+    time_t modtime = file_modtime( filename );
 
-     if ( !load_continuum( key, &slist, numservers, memory, modtime ) )
-     {
+    if ( !load_continuum( key, slist, numservers, memory, modtime ) )
+    {
         snprintf( k_error, sizeof(k_error), "%s", "Failed to load the continuum" );
         return 0;
-     }
+    }
     
     return 1;
 }
-
 
 void
 ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum cont)
@@ -604,7 +613,7 @@ ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum cont)
     key_t key;
     int shmid;
     int *data;
-    unsigned int numservers = 0;
+    int numservers = 0;
     unsigned long memory;
     serverinfo* slist;
 
@@ -621,7 +630,7 @@ ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum cont)
 
     key = file_key;
 
-    if ( !load_continuum( key, &slist, numservers, memory, 0 ) )
+    if ( !load_continuum( key, slist, numservers, memory, 0 ) )
     {
         snprintf( k_error, sizeof(k_error), "%s", "Failed to load the continuum" );
         return;
@@ -632,12 +641,7 @@ ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum cont)
 
     data = shmat( shmid, (void *)0, SHM_RDONLY );
 
-    cont->numpoints = *data;
-    cont->numservers = *(++data);
-    cont->memtotal = *(++data);
-    cont->modtime = ++data;
-    cont->array = data + sizeof( void* );
-    cont->slist = data + sizeof( void* ) + ( sizeof( mcs ) * cont->numpoints / sizeof(int) );
+    cont = (ketama_continuum) data;
 
     track_shm_data(data);
 }
@@ -648,7 +652,7 @@ ketama_remove_server( char* addr, ketama_continuum cont)
     key_t key;
     int shmid;
     int *data;
-    unsigned int numservers = 0;
+    int numservers = 0;
     unsigned long memory;
     serverinfo* slist;
 
@@ -662,13 +666,14 @@ ketama_remove_server( char* addr, ketama_continuum cont)
 
     // get the new server list
     slist = remove_serverinfo( addr, cont, &numservers, &memory);
-
     key = file_key;
 
-    if ( !load_continuum( key, &slist, numservers, memory, 0 ) )
-    {
-        snprintf( k_error, sizeof(k_error), "%s", "Failed to load the continuum" );
-        return;
+    if (slist != NULL) {
+        if ( !load_continuum( key, slist, numservers, memory, 0 ) )
+        {
+            snprintf( k_error, sizeof(k_error), "%s", "Failed to load the continuum" );
+            return;
+        }
     }
     
     shmid = shmget( key, MC_SHMSIZE, 0 ); // read only attempt.
@@ -676,12 +681,7 @@ ketama_remove_server( char* addr, ketama_continuum cont)
 
     data = shmat( shmid, (void *)0, SHM_RDONLY );
 
-    cont->numpoints = *data;
-    cont->numservers = *(++data);
-    cont->memtotal = *(++data);
-    cont->modtime = ++data;
-    cont->array = data + sizeof( void* );
-    cont->slist = data + sizeof( void* ) + ( sizeof( mcs ) * cont->numpoints / sizeof(int) );
+    cont = (ketama_continuum) data;
 
     track_shm_data(data);
 }
@@ -698,28 +698,22 @@ ketama_roll( ketama_continuum* contptr, char* filename )
         init_shm_data_tracker();
     }   
 
-    strcpy( k_error, "" );
+    snprintf(k_error, sizeof(k_error), "%s", "");
 
     key_t key;
     int shmid;
-    int *data;
+    ketama_continuum data;
     int sem_set_id;
-
-//     setlogmask( LOG_UPTO ( LOG_NOTICE | LOG_ERR | LOG_INFO ) );
-//     openlog( "ketama", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1 );
 
     key = ftok( filename, 'R' );
     file_key = key;
     if ( key == -1 )
     {
-        snprintf( k_error, sizeof(k_error), "Invalid filename specified: %*s", (int) sizeof(filename), filename );
+        snprintf( k_error, sizeof(k_error), "Invalid filename specified: %s", filename );
         return 0;
     }
 
-    *contptr = malloc( sizeof( continuum ) );
-    (*contptr)->numpoints = 0;
-    (*contptr)->array = 0;
-    (*contptr)->modtime = 0;
+    *contptr = NULL;
 
     sem_set_id = ketama_sem_init( key );
 
@@ -731,63 +725,64 @@ ketama_roll( ketama_continuum* contptr, char* filename )
 
         // if we are waiting for > 1 second, take drastic action:
         if(++sanity > 1000000)
-	{
+        {
             usleep( rand()%50000 );
             ketama_sem_unlock( sem_set_id );
-	    break;
+            break;
         }
     }
 
     time_t modtime = file_modtime( filename );
-    time_t* fmodtime = 0;
-    while ( !fmodtime || modtime != *fmodtime )
+
+    shmid = shmget( key, MC_SHMSIZE, 0 ); // read only attempt.
+    track_shm_id(shmid);
+
+    data = (ketama_continuum) shmat( shmid, (void *)0, SHM_RDONLY );
+    int create_needed = 0;
+
+    if ( data != (void *)(-1) )
     {
+        if (data->modtime != modtime) {
+            create_needed = 1;
+        }
+    } else {
+        create_needed = 1;
+    }
+
+
+    if (create_needed) {
+        ketama_sem_lock( sem_set_id );
+
+        if ( data == (void *)(-1) )
+            syslog( LOG_INFO, "Shared memory empty, creating and populating...\n" );
+        else
+            syslog( LOG_INFO, "Server definitions changed, reloading...\n" );
+
+        if ( !ketama_create_continuum( key, filename ) ) {
+            snprintf( k_error, sizeof(k_error), "%s", "Ketama_create_continuum() failed!\n" );
+            syslog( LOG_INFO, "Ketama_create_continuum() failed!" );
+            ketama_sem_unlock( sem_set_id );
+            return 0;
+        } else {
+            syslog( LOG_INFO, "ketama_create_continuum() successfully finished.\n" );
+        }
+
         shmid = shmget( key, MC_SHMSIZE, 0 ); // read only attempt.
         track_shm_id(shmid);
 
-		data = shmat( shmid, (void *)0, SHM_RDONLY );
-
-        if ( data == (void *)(-1) || (*contptr)->modtime != 0 )
-        {
-            ketama_sem_lock( sem_set_id );
-
-//          if ( (*contptr)->modtime == 0 )
-//              syslog( LOG_INFO, "Shared memory empty, creating and populating...\n" );
-//          else
-//              syslog( LOG_INFO, "Server definitions changed, reloading...\n" );
-
-            if ( !ketama_create_continuum( key, filename ) )
-            {
-//                 strcpy( k_error, "Ketama_create_continuum() failed!" );
-                ketama_sem_unlock( sem_set_id );
-                return 0;
-            }
-/*          else
-                syslog( LOG_INFO, "ketama_create_continuum() successfully finished.\n" );*/
-
-            shmid = shmget( key, MC_SHMSIZE, 0 ); // read only attempt.
-            track_shm_id(shmid);
-
-            data = shmat( shmid, (void *)0, SHM_RDONLY );
-            ketama_sem_unlock( sem_set_id );
-        }
-
-        if ( data == (void *)(-1) )
-        {
-            snprintf( k_error, sizeof(k_error), "%s", "Failed miserably to get pointer to shmemdata!" );
-            return 0;
-        }
-
-        (*contptr)->numpoints = *data;
-        (*contptr)->numservers = *(++data);
-        (*contptr)->memtotal = *(++data);
-        (*contptr)->modtime = ++data;
-        (*contptr)->array = data + sizeof( void* );
-        (*contptr)->slist = data + sizeof( void* ) + ( sizeof( mcs ) * (*contptr)->numpoints / sizeof(int) );
-        fmodtime = (time_t*)( (*contptr)->modtime );
-
-        track_shm_data(data);
+        data = (ketama_continuum) shmat( shmid, (void *)0, SHM_RDONLY );
+        ketama_sem_unlock( sem_set_id );
     }
+
+    if ( data == (void *)(-1) )
+    {
+        snprintf( k_error, sizeof(k_error), "%s", "Failed miserably to get pointer to shmemdata!" );
+        return 0;
+    }
+
+    *contptr = data;
+
+    track_shm_data((int*) data);
 
     return 1;
 }
@@ -812,7 +807,7 @@ ketama_smoke( ketama_continuum contptr )
     }
 
     if (sem_ids != NULL) {
-    	for (i = 0; i < num_sem_ids; i++) {
+        for (i = 0; i < num_sem_ids; i++) {
             semctl(sem_ids[i], 0, IPC_RMID, 0);
         }
         free(sem_ids);
@@ -831,7 +826,7 @@ ketama_smoke( ketama_continuum contptr )
         shm_ids_size = 1024;
     }
 
-    free(contptr);
+    (void) contptr;
 }
 
 
@@ -847,7 +842,7 @@ ketama_print_continuum( ketama_continuum cont )
     }
     else
     {
-        mcs (*mcsarr)[cont->numpoints] = cont->array;
+        mcs (*mcsarr)[cont->numpoints] = &(cont->array);
         for( a = 0; a < cont->numpoints; a++ )
         {
             printf( "%s (%u)\n", (*mcsarr)[a].ip, (*mcsarr)[a].point );
