@@ -33,6 +33,7 @@
 
 #define MAX_SERVERS  125  // Set max of server to calculate the size of the shared memory (MC_SHMSIZE)
 #define MAX_MCS_POINTS  MAX_SERVERS * 160
+#define PATH_MAX 256  //maximum size of the filename parameter
 
 #ifdef __cplusplus /* If this is a C++ compiler, use C linkage */
 extern "C" {
@@ -63,6 +64,9 @@ typedef struct
 
 typedef struct
 {
+    int cont_version;
+    time_t cont_modtime;
+    char cont_filename[PATH_MAX];
     int numpoints;
     int numservers;
     unsigned long memtotal;
@@ -123,6 +127,12 @@ void ketama_print_continuum( ketama_continuum c );
   * \param b The second entry.
   * \return -1 if b greater a, +1 if a greater b or 0 if both are equal. */
 int ketama_compare( mcs*, mcs* );
+
+/** \brief Compare two serverinfo entries in the server list.
+  * \param a The first entry.
+  * \param b The second entry.
+  * \return results of strcmp on a->addr and b->addr */
+int serverinfo_compare( serverinfo*, serverinfo* );
 
 /** \brief Hashing function, converting a string to an unsigned int by using MD5.
   * \param inString The string that you want to hash.

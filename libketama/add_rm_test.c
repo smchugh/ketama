@@ -13,31 +13,30 @@
 int main(int argc, char **argv)
 {
 
-  if(argc==1){
-	printf("Usage: %s <ketama.servers file>\n", *argv);
-	return 1;
+  if( argc == 1 ){
+	  //printf("Usage: %s <ketama.servers file>\n", *argv);
+	  //return 1;
+    argv[1] = "";
   }
 
   ketama_continuum c;
   ketama_roll( &c, *++argv );
 
   int i, count = c->numservers;
-  serverinfo (*slist)[count] = &(c->slist);
 
   printf("# servers: %u Total Memory: %lu\n", c->numservers, c->memtotal);
 
   for ( i = 0; i < count; i++ )
   {
-    printf( "%s (%lu) %lu\n", (*slist)[i].addr, (*slist)[i].memory, (unsigned long int)slist[i] );
+    printf( "%s (%lu) %lu\n", c->slist[i].addr, c->slist[i].memory, (unsigned long int)&c->slist[i] );
   }
   printf( "\n\n\n");
 
-  count = 10;
-  mcs (*mcsarr)[count] = &(c->array);
+  count = c->numpoints > 10 ? 10 : c->numpoints;
 
   for ( i = 0; i < count; i++ )
   {
-    printf( "%s (%u) %lu\n", (*mcsarr)[i].ip, (*mcsarr)[i].point, (unsigned long int)mcsarr[i] );
+    printf( "%s (%u) %lu\n", c->array[i].ip, c->array[i].point, (unsigned long int)&c->array[i] );
   }
   printf( "\n\n\n");
 
@@ -49,22 +48,20 @@ int main(int argc, char **argv)
   ketama_remove_server( "10.0.1.82:11211", c);
 
   count = c->numservers;
-  slist = &(c->slist);
 
   printf("# servers: %u Total Memory: %lu\n", c->numservers, c->memtotal);
 
   for ( i = 0; i < count; i++ )
   {
-    printf( "%s (%lu) %lu\n", (*slist)[i].addr, (*slist)[i].memory, (unsigned long int)slist[i] );
+    printf( "%s (%lu) %lu\n", c->slist[i].addr, c->slist[i].memory, (unsigned long int)&c->slist[i] );
   }
   printf( "\n\n\n");
 
-  count = 10;
-  mcsarr = &(c->array);
+  count = c->numpoints > 10 ? 10 : c->numpoints;
 
   for ( i = 0; i < count; i++ )
   {
-    printf( "%s (%u) %lu\n", (*mcsarr)[i].ip, (*mcsarr)[i].point, (unsigned long int)mcsarr[i] );
+    printf( "%s (%u) %lu\n", c->array[i].ip, c->array[i].point, (unsigned long int)&c->array[i] );
   }
   printf( "\n\n\n");
 
@@ -76,22 +73,20 @@ int main(int argc, char **argv)
   ketama_add_server( "10.0.1.82:11211", 300, c);
 
   count = c->numservers;
-  slist = &(c->slist);
 
   printf("# servers: %u Total Memory: %lu\n", c->numservers, c->memtotal);
 
   for ( i = 0; i < count; i++ )
   {
-    printf( "%s (%lu) %lu\n", (*slist)[i].addr, (*slist)[i].memory, (unsigned long int)slist[i] );
+    printf( "%s (%lu) %lu\n", c->slist[i].addr, c->slist[i].memory, (unsigned long int)&c->slist[i] );
   }
   printf( "\n\n\n");
 
-  count = 10;
-  mcsarr = &(c->array);
+  count = c->numpoints > 10 ? 10 : c->numpoints;
 
   for ( i = 0; i < count; i++ )
   {
-    printf( "%s (%u) %lu\n", (*mcsarr)[i].ip, (*mcsarr)[i].point, (unsigned long int)mcsarr[i] );
+    printf( "%s (%u) %lu\n", c->array[i].ip, c->array[i].point, (unsigned long int)&c->array[i] );
   }
   printf( "\n\n\n");
 

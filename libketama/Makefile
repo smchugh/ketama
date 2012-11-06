@@ -26,6 +26,8 @@ clean:
 	rm -f *.o
 	rm -f libketama.so.1
 	rm -f ketama_test
+	rm -f add_rm_test
+	rm -f php_test
 	rm -f build-stamp configure-stamp
 
 uninstall:
@@ -40,3 +42,9 @@ add_rm_test:
 	gcc $(CFLAGS) -g -DDEBUG -o ketama-debug.o -c ketama.c
 	gcc $(CFLAGS) -g -DDEBUG -o add-rm-test-debug.o -c add_rm_test.c
 	gcc $(CFLAGS) -I. -O3 -lm -g -msize -o add_rm_test ketama-debug.o md5-debug.o add-rm-test-debug.o
+
+php_test:
+	gcc $(CFLAGS) -g -DDEBUG -o md5-debug.o -c md5.c
+	gcc $(CFLAGS) -g -DDEBUG -o ketama-debug.o -c ketama.c
+	gcc $(CFLAGS) -g -DDEBUG -o php-test-debug.o -c php_test.c
+	gcc $(CFLAGS) -I. -O3 -lm -g -msize -o php_test ketama-debug.o md5-debug.o php-test-debug.o

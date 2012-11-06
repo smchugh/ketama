@@ -320,6 +320,9 @@ read_server_definitions( char* filename, int* count, unsigned long* memory )
         fclose( fi );
     }
 
+    // sort the server list
+    qsort( (void *) slist, numservers, sizeof( serverinfo ), (compfn)serverinfo_compare );
+
     *count = numservers;
     *memory = memtotal;
     return slist;
@@ -358,6 +361,9 @@ add_serverinfo( char* addr, unsigned long newmemory, ketama_continuum cont, int*
     numservers++;
     memtotal += newmemory;
 
+    // sort the server list
+    qsort( (void *) newslist, numservers, sizeof( serverinfo ), (compfn)serverinfo_compare );
+
     *count = numservers;
     *memory = memtotal;
 
@@ -391,6 +397,7 @@ remove_serverinfo( char* addr, ketama_continuum cont, int* count, unsigned long*
     if (rm_indx == -1) {
         newslist = NULL;
         snprintf( k_error, sizeof(k_error), "%s not found and not removed!", addr);
+        syslog( LOG_INFO, "%s not found and not removed!\n", addr );
     } else {
         newslist = (serverinfo*) malloc( sizeof( serverinfo ) * ( numservers - 1 ) );
         for (i = 0, j = 0; i < numservers; i++)
@@ -404,6 +411,9 @@ remove_serverinfo( char* addr, ketama_continuum cont, int* count, unsigned long*
         }
         numservers--;
         memtotal -= oldmemory;
+
+        // sort the server list
+        qsort( (void *) newslist, numservers, sizeof( serverinfo ), (compfn)serverinfo_compare );
     }
 
     *count = numservers;
@@ -532,6 +542,23 @@ load_continuum(key_t key, serverinfo* slist, int numservers, unsigned long memor
     if ( data == (void *)(-1) )
     {
         snprintf( k_error, sizeof(k_error), "%s", "Can't open shmmem for writing." );
+        syslog( LOG_INFO, "Can't open shmmem for writing.\n" );
+        return 0;
+    }
+
+    if ( sizeof(data->array) < sizeof( mcs ) * numpoints ) {
+        snprintf( k_error, sizeof(k_error), "%s", "Tried to exceed size of mcs array." );
+        syslog( LOG_INFO, "Tried to exceed size of mcs array.\n" );
+        free(ring);
+        free(servers);
+        return 0;
+    }
+
+    if ( sizeof(data->slist) < sizeof( serverinfo) * numservers ) {
+        snprintf( k_error, sizeof(k_error), "%s", "Tried to exceed size of servers array." );
+        syslog( LOG_INFO, "Tried to exceed size of servers array.\n" );
+        free(ring);
+        free(servers);
         return 0;
     }
 
@@ -542,6 +569,9 @@ load_continuum(key_t key, serverinfo* slist, int numservers, unsigned long memor
     memcpy( data->array, ring, sizeof( mcs ) * numpoints );
     memcpy( data->slist, servers, sizeof( serverinfo ) * numservers );
 
+    data->cont_version++;
+    data->cont_modtime = time(NULL);
+
     free(ring);
     free(servers);
 
@@ -549,11 +579,13 @@ load_continuum(key_t key, serverinfo* slist, int numservers, unsigned long memor
     /* We detatch here because we will re-attach in read-only
      * mode to actually use it. */
 #ifdef SOLARIS
-    if ( shmdt( (char *) data ) == -1 )
+        if ( shmdt( (char *) data ) == -1 ) {
 #else
-    if ( shmdt( (void *) data ) == -1 )
+        if ( shmdt( (void *) data ) == -1 ) {
 #endif
-        snprintf( k_error, sizeof(k_error), "%s", "Error detatching from shared memory!" );
+            snprintf( k_error, sizeof(k_error), "%s", "Error detatching from shared memory!" );
+            syslog( LOG_INFO, "Error detatching from shared memory!\n" );
+        }
 
     return 1;
 }
@@ -601,6 +633,7 @@ ketama_create_continuum( key_t key, char* filename )
     if ( !load_continuum( key, slist, numservers, memory, modtime ) )
     {
         snprintf( k_error, sizeof(k_error), "%s", "Failed to load the continuum" );
+        syslog( LOG_INFO, "Failed to load the continuum\n" );
         return 0;
     }
     
@@ -633,6 +666,7 @@ ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum cont)
     if ( !load_continuum( key, slist, numservers, memory, 0 ) )
     {
         snprintf( k_error, sizeof(k_error), "%s", "Failed to load the continuum" );
+        syslog( LOG_INFO, "Failed to load the continuum\n" );
         return;
     }
     
@@ -672,6 +706,7 @@ ketama_remove_server( char* addr, ketama_continuum cont)
         if ( !load_continuum( key, slist, numservers, memory, 0 ) )
         {
             snprintf( k_error, sizeof(k_error), "%s", "Failed to load the continuum" );
+            syslog( LOG_INFO, "Failed to load the continuum\n" );
             return;
         }
     }
@@ -705,12 +740,54 @@ ketama_roll( ketama_continuum* contptr, char* filename )
     ketama_continuum data;
     int sem_set_id;
 
+    // if we have an invalid file name that means we want to set up the infastructure 
+    // but leave continuum creation until we manually add servers with ketama_add_server
     key = ftok( filename, 'R' );
     file_key = key;
     if ( key == -1 )
     {
-        snprintf( k_error, sizeof(k_error), "Invalid filename specified: %s", filename );
-        return 0;
+        key = ketama_hashi( filename );
+        file_key = key;
+
+        // Add empty data to shmmem
+        shmid = shmget( key, MC_SHMSIZE, 0644 | IPC_CREAT );
+        track_shm_id(shmid);
+
+        data = (ketama_continuum) shmat( shmid, (void *)0, SHM_RDONLY );
+        if ( data == (void *)(-1) )
+        {
+            snprintf( k_error, sizeof(k_error), "%s", "Can't open shmmem for writing." );
+            syslog( LOG_INFO, "Can't open shmmem for writing.\n" );
+            return 0;
+        }
+
+        data = (ketama_continuum) shmat( shmid, (void *)0, 0 );
+
+        data->numpoints = 0;
+        data->numservers = 0;
+        data->memtotal = 0;
+        data->modtime = 0;
+        data->cont_version = 0;
+        data->cont_modtime = time(NULL);
+        snprintf(data->cont_filename, sizeof(data->cont_filename), "%s", filename);
+
+        /* We detatch here because we will re-attach in read-only
+         * mode to actually use it. */
+#ifdef SOLARIS
+        if ( shmdt( (char *) data ) == -1 ) {
+#else
+        if ( shmdt( (void *) data ) == -1 ) {
+#endif
+            snprintf( k_error, sizeof(k_error), "%s", "Error detatching from shared memory!" );
+            syslog( LOG_INFO, "Error detatching from shared memory!\n" );
+        }
+
+        // we can end here
+        data = (ketama_continuum) shmat( shmid, (void *)0, SHM_RDONLY );
+        *contptr = data;
+        track_shm_data((int*) data);
+
+        return 1;
     }
 
     *contptr = NULL;
@@ -759,8 +836,8 @@ ketama_roll( ketama_continuum* contptr, char* filename )
             syslog( LOG_INFO, "Server definitions changed, reloading...\n" );
 
         if ( !ketama_create_continuum( key, filename ) ) {
-            snprintf( k_error, sizeof(k_error), "%s", "Ketama_create_continuum() failed!\n" );
-            syslog( LOG_INFO, "Ketama_create_continuum() failed!" );
+            snprintf( k_error, sizeof(k_error), "%s", "Ketama_create_continuum() failed!" );
+            syslog( LOG_INFO, "Ketama_create_continuum() failed!\n" );
             ketama_sem_unlock( sem_set_id );
             return 0;
         } else {
@@ -780,6 +857,25 @@ ketama_roll( ketama_continuum* contptr, char* filename )
         return 0;
     }
 
+    data = (ketama_continuum) shmat( shmid, (void *)0, 0 );
+
+    data->cont_version = 0;
+    data->cont_modtime = time(NULL);
+    snprintf(data->cont_filename, sizeof(data->cont_filename), "%s", filename);
+
+    /* We detatch here because we will re-attach in read-only
+     * mode to actually use it. */
+#ifdef SOLARIS
+        if ( shmdt( (char *) data ) == -1 ) {
+#else
+        if ( shmdt( (void *) data ) == -1 ) {
+#endif
+            snprintf( k_error, sizeof(k_error), "%s", "Error detatching from shared memory!" );
+            syslog( LOG_INFO, "Error detatching from shared memory!\n" );
+        }
+
+
+    data = (ketama_continuum) shmat( shmid, (void *)0, SHM_RDONLY );
     *contptr = data;
 
     track_shm_data((int*) data);
@@ -855,6 +951,12 @@ int
 ketama_compare( mcs *a, mcs *b )
 {
     return ( a->point < b->point ) ?  -1 : ( ( a->point > b->point ) ? 1 : 0 );
+}
+
+int
+serverinfo_compare( serverinfo *a, serverinfo *b )
+{
+    return ( strcmp(a->addr, b->addr) );
 }
 
 
