@@ -53,9 +53,6 @@ int *sem_ids = NULL;
 int *shm_ids = NULL;
 int **shm_data = NULL;
 
-key_t file_key = 0;  // keep hold of the server list file key so we can reuse it when adding/removing servers
-                     // @todo replace with new logic for generating unique IPC keys for different conitnuums
-
 static void
 init_sem_id_tracker() {
     sem_ids = malloc(sizeof(int)*sem_ids_size);
@@ -661,8 +658,13 @@ ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum cont)
     // get the new server list
     slist = add_serverinfo( addr, newmemory, cont, &numservers, &memory);
 
-    key = file_key;
+    key = ftok( cont->cont_filename, 'R' );
+    if ( key == -1 )
+    {
+        key = ketama_hashi( cont->cont_filename );
+    }
 
+    // load the continuum
     if ( !load_continuum( key, slist, numservers, memory, 0 ) )
     {
         snprintf( k_error, sizeof(k_error), "%s", "Failed to load the continuum" );
@@ -700,8 +702,14 @@ ketama_remove_server( char* addr, ketama_continuum cont)
 
     // get the new server list
     slist = remove_serverinfo( addr, cont, &numservers, &memory);
-    key = file_key;
+    
+    key = ftok( cont->cont_filename, 'R' );
+    if ( key == -1 )
+    {
+        key = ketama_hashi( cont->cont_filename );
+    }
 
+    // load the continuum
     if (slist != NULL) {
         if ( !load_continuum( key, slist, numservers, memory, 0 ) )
         {
@@ -742,12 +750,12 @@ ketama_roll( ketama_continuum* contptr, char* filename )
 
     // if we have an invalid file name that means we want to set up the infastructure 
     // but leave continuum creation until we manually add servers with ketama_add_server
-    key = ftok( filename, 'R' );
-    file_key = key;
+    char cont_filename[PATH_MAX];
+    snprintf(cont_filename, sizeof(cont_filename), "%s", filename);
+    key = ftok( cont_filename, 'R' );
     if ( key == -1 )
     {
         key = ketama_hashi( filename );
-        file_key = key;
 
         // Add empty data to shmmem
         shmid = shmget( key, MC_SHMSIZE, 0644 | IPC_CREAT );
@@ -923,6 +931,8 @@ ketama_smoke( ketama_continuum contptr )
     }
 
     (void) contptr;
+
+    syslog( LOG_INFO, "Ketama completely smoked.\n" );
 }
 
 
