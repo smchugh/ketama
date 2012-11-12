@@ -26,7 +26,7 @@ int main(int argc, char **argv)
 
   char key[2];
   int i, count;
-  count = c->numpoints > 10 ? 10 : c->numpoints;
+  count = c.data->numpoints > 10 ? 10 : c.data->numpoints;
 
   printf("array(%d) {\n", count);
   for ( i = 0; i < count; i++ )
@@ -40,7 +40,7 @@ int main(int argc, char **argv)
 
 
   ketama_add_server( "8.7.6.5:4321", 600, c);
-  count = c->numpoints > 10 ? 10 : c->numpoints;
+  count = c.data->numpoints > 10 ? 10 : c.data->numpoints;
 
   printf("array(%d) {\n", count);
   for ( i = 0; i < count; i++ )

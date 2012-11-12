@@ -270,7 +270,9 @@ PHP_FUNCTION(ketama_add_server)
 	}
 
 	ZEND_FETCH_RESOURCE( continuum, ketama_continuum, &zcontinuum, -1, "ketama continuum", le_ketama_continuum );
-	ketama_add_server( address, memory, continuum );
+	if (!ketama_add_server( address, memory, continuum )) {
+		php_error_docref(NULL TSRMLS_CC, E_ERROR, "unable to add a server to the Ketama continuum");
+	}
 }
 /* }}} */
 
@@ -290,7 +292,9 @@ PHP_FUNCTION(ketama_remove_server)
 	}
 
 	ZEND_FETCH_RESOURCE( continuum, ketama_continuum, &zcontinuum, -1, "ketama continuum", le_ketama_continuum );
-	ketama_remove_server( address, continuum );
+	if (!ketama_remove_server( address, continuum )) {
+		php_error_docref(NULL TSRMLS_CC, E_ERROR, "unable to remove a server from the Ketama continuum");
+	}
 }
 /* }}} */
 

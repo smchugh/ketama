@@ -70,57 +70,53 @@ typedef struct
     int numpoints;
     int numservers;
     unsigned long memtotal;
-    time_t modtime;
+    time_t fmodtime;
     mcs array[MAX_MCS_POINTS]; //array of mcs structs
     serverinfo slist[MAX_SERVERS]; //array of serverinfo structs
 } continuum;
 
-typedef continuum* ketama_continuum;
+#define MC_SHMSIZE sizeof(continuum)
 
-
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__linux__)
-    #define MC_SHMSIZE  sizeof(continuum) + sizeof(_SC_PAGE_SIZE) - (sizeof(continuum) % sysconf(_SC_PAGE_SIZE))
-#else
-    #define MC_SHMSIZE  sizeof(continuum) + 40168192
-#endif
+typedef struct
+{
+    int shmid;
+    key_t key;
+    continuum* data;
+} ketama_continuum;
 
 
 /** \brief Get a continuum struct that contains a reference to the server list.
-  * \param contptr The value of this pointer will contain the retrieved continuum.
+  * \param resource_ptr The value of this pointer will contain the retrieved continuum resource.
   * \param filename The server-definition file which defines our continuum.
   * \return 0 on failure, 1 on success. */
-int ketama_roll( ketama_continuum* contptr, char* filename );
+int ketama_roll( ketama_continuum* resource_ptr, char* filename );
 
 /** \brief Frees any allocated memory.
-  * \param contptr The continuum that you want to be destroy. */
-void ketama_smoke( ketama_continuum contptr );
+  * \param resource The continuum resource that you want to be destroy. */
+void ketama_smoke( ketama_continuum resource );
 
 /** \brief Maps a key onto a server in the continuum.
   * \param key The key that you want to map to a specific server.
-  * \param cont Pointer to the continuum in which we will search.
+  * \param resource Pointer to the continuum resource in which we will search.
   * \return The mcs struct that the given key maps to. */
-mcs* ketama_get_server( char*, ketama_continuum );
+mcs* ketama_get_server( char* key, ketama_continuum resource );
 
 /** \brief Adds a server to the ring
   * \param addr The address of the server that you want to add.
   * \param newmemory The amount of allocated memory from this server to be added to the cluster
-  * \param cont Pointer to the continuum which we will refresh. */
-void ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum cont);
+  * \param resource Pointer to the continuum resource which we will refresh.
+  * \return 0 on failure, 1 on success. */
+int ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum resource);
 
 /** \brief Removes a server from the ring
   * \param addr The address of the server that you want to add.
-  * \param cont Pointer to the continuum which we will refresh. */
-void ketama_remove_server( char* addr, ketama_continuum cont);
-
-/** \brief Removes a server from the ring
-  * \param addr The address of the server that you want to remove.
-  * \param cont Pointer to the continuum which we will refresh.
+  * \param resource Pointer to the continuum resource which we will refresh.
   * \return 0 on failure, 1 on success. */
-//int ketama_remove_server( char* ip, ketama_continuum cont);
+int ketama_remove_server( char* addr, ketama_continuum resource);
 
 /** \brief Print the server list of a continuum to stdout.
-  * \param cont The continuum to print. */
-void ketama_print_continuum( ketama_continuum c );
+  * \param resource The continuum resource to print from. */
+void ketama_print_continuum( ketama_continuum resource );
 
 /** \brief Compare two server entries in the circle.
   * \param a The first entry.
