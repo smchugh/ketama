@@ -279,10 +279,12 @@ file_modtime( char* filename )
 static key_t
 get_key( char* filename, time_t* fmodtime )
 {
-    key_t key = -1;
+    key_t key;
     if (!strncmp(filename, "key:", 4)) {
-        sscanf(filename, "key:%x", &key );
+        unsigned int key_val = -1;
+        sscanf(filename, "key:%x", &key_val );
         *fmodtime = 0;
+        key = (key_t) key_val;
     } else {
         key = ftok(filename, 'R');
         *fmodtime = file_modtime( filename );
@@ -719,7 +721,7 @@ ketama_create_continuum(key_t key, char* filename, ketama_continuum* resource_pt
             snprintf( k_error, sizeof(k_error), "Ketama: No valid server definitions in file %s", filename );
             syslog( LOG_INFO, k_error );
             return 0;
-        } else if ( slist == 0 ) {
+        } else if ( slist == NULL ) {
             // read_server_definitions must've set error message.
             return 0;
         }

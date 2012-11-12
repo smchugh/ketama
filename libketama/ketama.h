@@ -84,6 +84,9 @@ typedef struct
     continuum* data;
 } ketama_continuum;
 
+// php expects a pointer, not a struct
+typedef ketama_continuum* continuum_resource;
+
 
 /** \brief Get a continuum struct that contains a reference to the server list.
   * \param resource_ptr The value of this pointer will contain the retrieved continuum resource.

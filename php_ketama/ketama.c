@@ -38,8 +38,8 @@ static int le_ketama_continuum;
 
 static void ketama_continuum_dtor( zend_rsrc_list_entry *rsrc TSRMLS_DC )
 {
-	ketama_continuum continuum = (ketama_continuum)rsrc->ptr;
-	ketama_smoke( continuum );
+	ketama_continuum* continuum = (ketama_continuum*)rsrc->ptr;
+	ketama_smoke( *continuum );
 }
 
 /* {{{ ketama_functions[]
@@ -173,8 +173,8 @@ PHP_FUNCTION(ketama_roll)
 		return;
 	}
 
-	ketama_continuum c;
-	if ( ketama_roll( &c, filename ) )
+	ketama_continuum* c;
+	if ( ketama_roll( c, filename ) )
 	{
 		ZEND_REGISTER_RESOURCE( return_value, c, le_ketama_continuum );
 	} else {
@@ -189,14 +189,14 @@ PHP_FUNCTION(ketama_roll)
 PHP_FUNCTION(ketama_destroy)
 {
 	zval *r;
-	ketama_continuum continuum;
+	ketama_continuum* continuum;
 
 	if ( zend_parse_parameters( ZEND_NUM_ARGS() TSRMLS_CC, "r", &r ) == FAILURE )
 	{
 		return;
 	}
 
-	ZEND_FETCH_RESOURCE( continuum, ketama_continuum, &r, -1, "ketama continuum", le_ketama_continuum );
+	ZEND_FETCH_RESOURCE( continuum, ketama_continuum*, &r, -1, "ketama continuum", le_ketama_continuum );
 	zend_list_delete( Z_LVAL_P( r ) );
 }
 /* }}} */
@@ -207,15 +207,15 @@ PHP_FUNCTION(ketama_destroy)
 PHP_FUNCTION(ketama_print_continuum)
 {
     zval *r;
-    ketama_continuum continuum;
+    ketama_continuum* continuum;
 
     if ( zend_parse_parameters( ZEND_NUM_ARGS() TSRMLS_CC, "r", &r ) == FAILURE )
     {
         return;
     }
 
-    ZEND_FETCH_RESOURCE( continuum, ketama_continuum, &r, -1, "ketama continuum", le_ketama_continuum );
-    ketama_print_continuum( continuum );
+    ZEND_FETCH_RESOURCE( continuum, ketama_continuum*, &r, -1, "ketama continuum", le_ketama_continuum );
+    ketama_print_continuum( *continuum );
 }
 /* }}} */
 
@@ -234,7 +234,7 @@ PHP_FUNCTION(ketama_error)
 PHP_FUNCTION(ketama_get_server)
 {
 	zval *zcontinuum;
-	ketama_continuum continuum;
+	ketama_continuum* continuum;
 	char *key;
 	long key_len;
 	mcs* server;
@@ -244,8 +244,8 @@ PHP_FUNCTION(ketama_get_server)
 		return;
 	}
 
-	ZEND_FETCH_RESOURCE( continuum, ketama_continuum, &zcontinuum, -1, "ketama continuum", le_ketama_continuum );
-	server = ketama_get_server( key, continuum );
+	ZEND_FETCH_RESOURCE( continuum, ketama_continuum*, &zcontinuum, -1, "ketama continuum", le_ketama_continuum );
+	server = ketama_get_server( key, *continuum );
 
 	array_init( return_value );
 	add_assoc_long( return_value, "point", server->point );
@@ -259,7 +259,7 @@ PHP_FUNCTION(ketama_get_server)
 PHP_FUNCTION(ketama_add_server)
 {
 	zval *zcontinuum;
-	ketama_continuum continuum;
+	ketama_continuum* continuum;
 	char *address;
 	long address_len;
 	unsigned long memory;
@@ -269,8 +269,8 @@ PHP_FUNCTION(ketama_add_server)
 		return;
 	}
 
-	ZEND_FETCH_RESOURCE( continuum, ketama_continuum, &zcontinuum, -1, "ketama continuum", le_ketama_continuum );
-	if (!ketama_add_server( address, memory, continuum )) {
+	ZEND_FETCH_RESOURCE( continuum, ketama_continuum*, &zcontinuum, -1, "ketama continuum", le_ketama_continuum );
+	if (!ketama_add_server( address, memory, *continuum )) {
 		php_error_docref(NULL TSRMLS_CC, E_ERROR, "unable to add a server to the Ketama continuum");
 	}
 }
@@ -282,7 +282,7 @@ PHP_FUNCTION(ketama_add_server)
 PHP_FUNCTION(ketama_remove_server)
 {
 	zval *zcontinuum;
-	ketama_continuum continuum;
+	ketama_continuum* continuum;
 	char *address;
 	long address_len;
 
@@ -291,8 +291,8 @@ PHP_FUNCTION(ketama_remove_server)
 		return;
 	}
 
-	ZEND_FETCH_RESOURCE( continuum, ketama_continuum, &zcontinuum, -1, "ketama continuum", le_ketama_continuum );
-	if (!ketama_remove_server( address, continuum )) {
+	ZEND_FETCH_RESOURCE( continuum, ketama_continuum*, &zcontinuum, -1, "ketama continuum", le_ketama_continuum );
+	if (!ketama_remove_server( address, *continuum )) {
 		php_error_docref(NULL TSRMLS_CC, E_ERROR, "unable to remove a server from the Ketama continuum");
 	}
 }
