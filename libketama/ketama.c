@@ -45,15 +45,15 @@ char k_error[255] = "";
 
 int num_sem_ids = 0;
 int sem_ids_size = 10;
-int *sem_ids = NULL;
+int* sem_ids = NULL;
 
 int num_resources = 0;
 int shm_resources_size = 10;
-ketama_continuum *shm_resources = NULL;
+continuum_resource* shm_resources = NULL;
 
 static void
 init_shm_resource_tracker() {
-    shm_resources = (ketama_continuum*) malloc( sizeof(ketama_continuum) * shm_resources_size );
+    shm_resources = (continuum_resource*) malloc( sizeof(continuum_resource) * shm_resources_size );
     if (shm_resources == NULL) {
         syslog( LOG_INFO, "Ketama: Cannot malloc shm resource tracker.\n" );
         exit(1);
@@ -61,12 +61,12 @@ init_shm_resource_tracker() {
 }
 
 static void
-track_shm_resource(ketama_continuum resource) {
+track_shm_resource(continuum_resource resource) {
     int i, indx = -1;
 
     // find the resource and update it
     for (i = 0; i < num_resources; i++) {
-        if (shm_resources[i].shmid == resource.shmid) {
+        if (shm_resources[i].key == resource.key) {
             // if the continuum pointer is invalid don't count this as a found resource
             if (shm_resources[i].data != NULL) {
                 indx = i;
@@ -79,7 +79,7 @@ track_shm_resource(ketama_continuum resource) {
     // if we didn't find it, create a new one
     if (indx == -1) {
         if (num_resources == shm_resources_size) {
-            shm_resources = (ketama_continuum*) realloc( shm_resources, sizeof(ketama_continuum) * shm_resources_size * 2 );
+            shm_resources = (continuum_resource*) realloc( shm_resources, sizeof(continuum_resource) * shm_resources_size * 2 );
             if (shm_resources == NULL) {
                 syslog( LOG_INFO, "Ketama: Cannot realloc shm resource tracker.\n" );
                 exit(1);
@@ -93,14 +93,17 @@ track_shm_resource(ketama_continuum resource) {
     }
 }
 
-static ketama_continuum
-get_shm_resource(int shmid) {
-    ketama_continuum resource;
-    int i, indx = -1;
+/** \brief Retrieves an existing or new resource.
+  * \param key Key used to attach to shared memory segment.
+  * \param cont Pointer to the continuum resource that will be filled with the location of a valid resource.
+  * \return 1 on success, 0 for failure */
+static int
+get_shm_resource(key_t key, ketama_continuum cont) {
+    int shmid, i, indx = -1;
 
     // find the resource
     for (i = 0; i < num_resources; i++) {
-        if (shm_resources[i].shmid == shmid) {
+        if (shm_resources[i].key == key) {
             // if the continuum pointer is invalid don't count this as a found resource
             if (shm_resources[i].data != NULL) {
                 indx = i;
@@ -108,17 +111,33 @@ get_shm_resource(int shmid) {
         }
     }
 
-    // if not found, send back an initialized resource
-    if (indx == -1) {
-        resource.shmid = 0;
-        resource.key = 0;
-        resource.data = NULL;
-    } else {
-        resource = shm_resources[indx];
+    // send back the existing resource if it exists
+    if (indx != -1) {
+        *cont = shm_resources[indx];
+        return 1;
     }
 
-    // return the found resource or NULL
-    return resource;
+    // attempt to obtain the shared memory ID assigned to this key, and create a segment if it doesn't exist
+    shmid = shmget( key, MC_SHMSIZE, 0644 | IPC_CREAT );
+    if ( shmid == -1 ) {
+        snprintf( k_error, sizeof(k_error), "Ketama: get_shm_resource failed to get valid shared memory segment with errno: %d.\n", errno );
+        syslog( LOG_INFO, k_error );
+        cont = NULL;
+        return 0;
+    }
+
+    // attempt to create an attachment to the shared memory segment
+    cont->data = (continuum*) shmat( shmid, (void *)0, SHM_RDONLY );
+    if ( cont->data == (void *)(-1) ) {
+        snprintf( k_error, sizeof(k_error), "Ketama: get_shm_resource failed to attach read-only shared memory segment with errno: %d.\n", errno );
+        syslog( LOG_INFO, k_error  );
+        cont = NULL;
+        return 0;
+    }
+    cont->shmid = shmid;
+    cont->key = key;
+
+    return 1;
 }
 
 static int
@@ -262,7 +281,6 @@ ketama_md5_digest( char* inString, unsigned char *md5pword )
 static time_t
 file_modtime( char* filename )
 {
-    (void) filename;
     struct stat attrib;
 
     stat( filename, &attrib );
@@ -517,27 +535,41 @@ ketama_hashi( char* inString )
 
 
 mcs*
-ketama_get_server( char* key, ketama_continuum resource )
+ketama_get_server( char* key, ketama_continuum cont )
 {
     unsigned int h = ketama_hashi( key );
-    continuum* cont = resource.data;
-    int highp = cont->numpoints;
-    int lowp = 0, midp;
+    int lowp = 0, midp, highp;
     unsigned int midval, midval1;
+
+    // verify that a valid resource was passed in before getting its key
+    if (cont == NULL) {
+        snprintf( k_error, sizeof(k_error), "Ketama: ketama_get_server passed illegal pointer to a continuum resource.\n" );
+        syslog( LOG_INFO, k_error );
+        return NULL;
+    }
+    key_t fkey = cont->key;
+
+    // try to find an existsing resource with a shared memory segment in the array of tracked resources, or create a new attachment resource
+    if ( !get_shm_resource(fkey, cont) ) {
+        snprintf( k_error, sizeof(k_error), "Ketama: ketama_get_server failed to get a valid resource.\n" );
+        syslog( LOG_INFO, k_error  );
+        return NULL;
+    }
 
     // divide and conquer array search to find server with next biggest
     // point after what this key hashes to
+    highp = cont->data->numpoints;
     while ( 1 ) {
         midp = (int)( ( lowp+highp ) / 2 );
 
-        if ( midp == cont->numpoints )
-            return &cont->array[0]; // if at the end, roll back to zeroth
+        if ( midp == cont->data->numpoints )
+            return &cont->data->array[0]; // if at the end, roll back to zeroth
 
-        midval = cont->array[midp].point;
-        midval1 = midp == 0 ? 0 : cont->array[midp-1].point;
+        midval = cont->data->array[midp].point;
+        midval1 = midp == 0 ? 0 : cont->data->array[midp-1].point;
 
         if ( h <= midval && h > midval1 )
-            return &cont->array[midp];
+            return &cont->data->array[midp];
 
         if ( midval < h )
             lowp = midp + 1;
@@ -545,7 +577,7 @@ ketama_get_server( char* key, ketama_continuum resource )
             highp = midp - 1;
 
         if ( lowp > highp )
-            return &cont->array[0];
+            return &cont->data->array[0];
     }
 }
 
@@ -628,7 +660,7 @@ load_continuum(key_t key, serverinfo* slist, int numservers, unsigned long memor
     // create an attachment in virtual memory to the shared memory segment, and failout if that an error is returned
     data = (continuum*) shmat( shmid, (void *)0, 0 );
     if ( data == (void *)(-1) ) {
-        snprintf( k_error, sizeof(k_error), "Ketama: load_continuum failed to attach shared memory segment with errno: %d.\n", errno );
+        snprintf( k_error, sizeof(k_error), "Ketama: load_continuum failed to attach writable shared memory segment with errno: %d.\n", errno );
         invalid_write = 1;
     }
 
@@ -682,34 +714,27 @@ load_continuum(key_t key, serverinfo* slist, int numservers, unsigned long memor
 }
 
 /** \brief Rolls the ketama, or checks for propper creation based on passed in flag
-  * \param resource_ptr The value of this pointer will contain the retrieved continuum.
+  * \param contptr The value of this pointer will contain the retrieved continuum.
   * \param filename The server-definition file which defines our continuum.
   * \param roller_flag 0 to allow creation if continuum is stale or non-existent, 
   *                    1 to only allow a check for a valid continuum
   * \return 0 on failure, 1 on success. */
-static int ketama_roller( ketama_continuum* resource_ptr, char* filename, int roller_flag );
+static int ketama_roller( ketama_continuum* contptr, char* filename, int roller_flag );
 
 
 /** \brief Generates the continuum of servers (each server as many points on a circle).
   * \param key Shared memory key for storing the newly created continuum.
   * \param filename Server definition file, which will be parsed to create this continuum.
-  * \param resource_ptr The value of this pointer will contain the retrieved continuum resource.
+  * \param contptr The value of this pointer will contain the retrieved continuum resource.
   * \return 0 on failure, 1 on success. */
 static int
-ketama_create_continuum(key_t key, char* filename, ketama_continuum* resource_ptr)
+ketama_create_continuum(key_t key, char* filename, ketama_continuum* contptr)
 {
     int shmid, sem_set_id;
     int numservers = 0;
     unsigned long memory;
     serverinfo* slist;
-
-    // attempt to obtain the shared memory ID assigned to this key, and create a segment if it doesn't exist
-    shmid = shmget( key, MC_SHMSIZE, 0644 | IPC_CREAT );
-    if ( shmid == -1 ) {
-        snprintf( k_error, sizeof(k_error), "Ketama: ketama_create_continuum failed to get valid shared memory segment with errno: %d.\n", errno );
-        syslog( LOG_INFO, k_error );
-        return 0;
-    }
+    continuum* data;
 
     // if filename is not a user-specific key, init a shared memory segment from the pathname, if it's valid
     if (strncmp(filename, "key:", 4)) {
@@ -739,14 +764,22 @@ ketama_create_continuum(key_t key, char* filename, ketama_continuum* resource_pt
         }
     }
 
+    // attempt to obtain the shared memory ID assigned to this key, and create a segment if it doesn't exist
+    shmid = shmget( key, MC_SHMSIZE, 0644 | IPC_CREAT );
+    if ( shmid == -1 ) {
+        snprintf( k_error, sizeof(k_error), "Ketama: ketama_create_continuum failed to get valid shared memory segment with errno: %d.\n", errno );
+        syslog( LOG_INFO, k_error );
+        return 0;
+    }
+
     // lock the semaphore to prevent other writing to the shared memory segment
     sem_set_id = ketama_sem_init( key );
     ketama_sem_safely_lock( sem_set_id );
 
     // create an attachment in virtual memory to the shared memory segment, and failout if that an error is returned
-    continuum* data = (continuum*) shmat( shmid, (void *)0, 0 );
+    data = (continuum*) shmat( shmid, (void *)0, 0 );
     if ( data == (void *)(-1) ) {
-        snprintf( k_error, sizeof(k_error), "Ketama: ketama_create_continuum failed to attach shared memory segment with errno: %d.\n", errno );
+        snprintf( k_error, sizeof(k_error), "Ketama: ketama_create_continuum failed to attach writable shared memory segment with errno: %d.\n", errno );
         syslog( LOG_INFO, k_error  );
         ketama_sem_unlock( sem_set_id );
         return 0;
@@ -770,26 +803,40 @@ ketama_create_continuum(key_t key, char* filename, ketama_continuum* resource_pt
     ketama_sem_unlock( sem_set_id );
 
     // rerun ketama_roller with the roller flag on to validate the loaded continuum
-    return ketama_roller( resource_ptr, filename, 1);
+    return ketama_roller( contptr, filename, 1);
 }
 
 int
-ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum resource)
+ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum cont)
 {
     key_t key;
-    continuum* cont = resource.data;
     int numservers = 0;
     unsigned long memory;
     serverinfo* slist;
     time_t fmodtime;
 
+    // verify that a valid resource was passed in before getting its key
+    if (cont == NULL) {
+        snprintf( k_error, sizeof(k_error), "Ketama: ketama_add_server passed illegal pointer to a continuum resource.\n" );
+        syslog( LOG_INFO, k_error );
+        return 0;
+    }
+    key = cont->key;
+
+    // try to find an existsing resource with a shared memory segment in the array of tracked resources, or create a new attachment resource
+    if ( !get_shm_resource(key, cont) ) {
+        snprintf( k_error, sizeof(k_error), "Ketama: ketama_add_server failed to get a valid resource.\n" );
+        syslog( LOG_INFO, k_error  );
+        return 0;
+    }
+
     // get the new server list
-    slist = add_serverinfo( addr, newmemory, cont, &numservers, &memory);
+    slist = add_serverinfo( addr, newmemory, cont->data, &numservers, &memory);
 
     // get the shared memory segment key
-    key = get_key( cont->cont_filename, &fmodtime );
+    key = get_key( cont->data->cont_filename, &fmodtime );
     if ( key == -1 ) {
-        snprintf( k_error, sizeof(k_error), "Ketama: ketama_add_server failed to make a valid key from %s.\n", cont->cont_filename );
+        snprintf( k_error, sizeof(k_error), "Ketama: ketama_add_server failed to make a valid key from %s.\n", cont->data->cont_filename );
         syslog( LOG_INFO, k_error );
         return 0;
     }
@@ -801,26 +848,40 @@ ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum resourc
         return 0;
     }
 
-    return ketama_roller( &resource, cont->cont_filename, 1);
+    return ketama_roller( &cont, cont->data->cont_filename, 1);
 }
 
 int
-ketama_remove_server( char* addr, ketama_continuum resource)
+ketama_remove_server( char* addr, ketama_continuum cont)
 {
     key_t key;
-    continuum* cont = resource.data;
     int numservers = 0;
     unsigned long memory;
     serverinfo* slist;
     time_t fmodtime;
 
+    // verify that a valid resource was passed in before getting its key
+    if (cont == NULL) {
+        snprintf( k_error, sizeof(k_error), "Ketama: ketama_remove_server passed illegal pointer to a continuum resource.\n" );
+        syslog( LOG_INFO, k_error );
+        return 0;
+    }
+    key = cont->key;
+
+    // try to find an existsing resource with a shared memory segment in the array of tracked resources, or create a new attachment resource
+    if ( !get_shm_resource(key, cont) ) {
+        snprintf( k_error, sizeof(k_error), "Ketama: ketama_remove_server failed to get a valid resource.\n" );
+        syslog( LOG_INFO, k_error  );
+        return 0;
+    }
+
     // get the new server list
-    slist = remove_serverinfo( addr, cont, &numservers, &memory);
+    slist = remove_serverinfo( addr, cont->data, &numservers, &memory);
     
-    // get the shared memory segment key
-    key = get_key( cont->cont_filename, &fmodtime );
+    // get the shared memory segment key, validating the key that was passed in
+    key = get_key( cont->data->cont_filename, &fmodtime );
     if ( key == -1 ) {
-        snprintf( k_error, sizeof(k_error), "Ketama: ketama_remove_server failed to make a valid key from %s.\n", cont->cont_filename );
+        snprintf( k_error, sizeof(k_error), "Ketama: ketama_remove_server failed to make a valid key from %s.\n", cont->data->cont_filename );
         syslog( LOG_INFO, k_error );
         return 0;
     }
@@ -832,16 +893,15 @@ ketama_remove_server( char* addr, ketama_continuum resource)
         return 0;
     }
     
-    return ketama_roller( &resource, cont->cont_filename, 1);
+    return ketama_roller( &cont, cont->data->cont_filename, 1);
 }
 
 
 static int
-ketama_roller( ketama_continuum* resource_ptr, char* filename, int roller_flag )
+ketama_roller( ketama_continuum* contptr, char* filename, int roller_flag )
 {
     key_t key;
-    int shmid;
-    ketama_continuum resource;
+    continuum_resource resource;
 
     // if we have a string like "key:0x1234" that means we want to set up the infastructure 
     // but leave continuum creation until we manually add servers with ketama_add_server
@@ -855,30 +915,16 @@ ketama_roller( ketama_continuum* resource_ptr, char* filename, int roller_flag )
         return 0;
     }
 
-    // attempt to obtain the shared memory ID assigned to this key, and create a segment if it doesn't exist
-    shmid = shmget( key, MC_SHMSIZE, 0644 | IPC_CREAT );
-    if ( shmid == -1 ) {
-        snprintf( k_error, sizeof(k_error), "Ketama: ketama_roll failed to get valid shared memory segment with errno: %d.\n", errno );
-        syslog( LOG_INFO, k_error );
+    // try to find an existsing resource with a shared memory segment in the array of tracked resources, or create a new attachment resource
+    if ( !get_shm_resource(key, &resource) ) {
+        snprintf( k_error, sizeof(k_error), "Ketama: ketama_roller failed to get a valid resource.\n" );
+        syslog( LOG_INFO, k_error  );
         return 0;
-    }
-
-    // try to find the shared memory segment in the array of tracked resources, or create a new attachment in virtual memory
-    resource = get_shm_resource(shmid);
-    if ( resource.shmid == 0 ) {
-        resource.data = (continuum*) shmat( shmid, (void *)0, SHM_RDONLY );
-        if ( resource.data == (void *)(-1) ) {
-            snprintf( k_error, sizeof(k_error), "Ketama: ketama_roll failed to attach shared memory segment with errno: %d.\n", errno );
-            syslog( LOG_INFO, k_error  );
-            return 0;
-        }
-        resource.shmid = shmid;
-        resource.key = key;
     }
 
     // if the continuum is not stale or new, end here and track the resource if we somehow missed tracking it
     if ( (resource.data->fmodtime == fmodtime) && (resource.data->cont_version != 0) ) {
-        *resource_ptr = resource;
+        **contptr = resource;
         track_shm_resource(resource);
         syslog( LOG_INFO, "Ketama: ketama_roll() successfully found a valid shared memory segment.\n" );
         return 1;
@@ -891,14 +937,14 @@ ketama_roller( ketama_continuum* resource_ptr, char* filename, int roller_flag )
     }
 
     // if we've already attempted to run ketama_create then that subroutine failed and we want to fail out
-    if ( roller_flag ) {
+    if ( roller_flag != 0) {
         snprintf( k_error, sizeof(k_error), "Ketama: ketama_create_continuum failed to create a valid continuum.\n" );
         syslog( LOG_INFO, k_error );
         return 0;
     }
 
     // attempt to run ketama_create continuum
-    if ( !ketama_create_continuum( key, filename, resource_ptr ) ) {
+    if ( !ketama_create_continuum( key, filename, contptr ) ) {
         snprintf( k_error, sizeof(k_error), "Ketama: ketama_create_continuum failed!\n" );
         syslog( LOG_INFO, k_error );
         return 0;
@@ -910,20 +956,23 @@ ketama_roller( ketama_continuum* resource_ptr, char* filename, int roller_flag )
 }
 
 int
-ketama_roll( ketama_continuum* resource_ptr, char* filename )
+ketama_roll( ketama_continuum* contptr, char* filename )
 {
     // some initialization
     if (shm_resources == NULL) {
         init_shm_resource_tracker();
     }
 
-    return ketama_roller( resource_ptr, filename, 0);
+    // initiate the resource pointer
+    *contptr = (ketama_continuum) malloc( sizeof(continuum_resource) );
+
+    return ketama_roller( contptr, filename, 0);
 }
 
 
 
 void
-ketama_smoke( ketama_continuum resource )
+ketama_smoke( ketama_continuum cont )
 {
     int i;
     if (shm_resources != NULL) {
@@ -947,25 +996,40 @@ ketama_smoke( ketama_continuum resource )
         sem_ids_size = 10;
     }
 
-    (void) resource;
+    free(cont);
 
     syslog( LOG_INFO, "Ketama: Ketama completely smoked.\n" );
 }
 
 
 void
-ketama_print_continuum( ketama_continuum resource )
+ketama_print_continuum( ketama_continuum cont )
 {
     int a;
-    continuum* cont = resource.data;
+    key_t key;
 
-    printf( "Numpoints in continuum: %d\n", cont->numpoints );
+    // verify that a valid resource was passed in before getting its key
+    if (cont == NULL) {
+        snprintf( k_error, sizeof(k_error), "Ketama: ketama_print_continuum passed illegal pointer to a continuum resource.\n" );
+        syslog( LOG_INFO, k_error );
+        return;
+    }
+    key = cont->key;
 
-    if ( cont->array == 0 ) {
+    // try to find an existsing resource with a shared memory segment in the array of tracked resources, or create a new attachment resource
+    if ( !get_shm_resource(key, cont) ) {
+        snprintf( k_error, sizeof(k_error), "Ketama: ketama_print_continuum failed to get a valid resource.\n" );
+        syslog( LOG_INFO, k_error  );
+        return;
+    }
+
+    printf( "Numpoints in continuum: %d\n", cont->data->numpoints );
+
+    if ( cont->data->array == 0 ) {
         printf( "Continuum empty\n" );
     } else {
-        for( a = 0; a < cont->numpoints; a++ ) {
-            printf( "%s (%u)\n", cont->array[a].ip, cont->array[a].point );
+        for( a = 0; a < cont->data->numpoints; a++ ) {
+            printf( "%s (%u)\n", cont->data->array[a].ip, cont->data->array[a].point );
         }
     }
 }
