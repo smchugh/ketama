@@ -277,15 +277,8 @@ PHP_FUNCTION(ketama_get_server_list)
 
 	array_init( return_value );
 	for (i = 0; i < numservers; i++) {
-		zval *server_list_element;
-		ALLOC_INIT_ZVAL(server_list_element);
-        array_init(server_list_element);
-
         snprintf(addr, sizeof(addr), "%s", slist[i].addr);
-		add_assoc_string( server_list_element, "address", addr, 1 );
-		add_assoc_long( server_list_element, "memory", slist[i].memory );
-
-		add_next_index_zval(return_value, server_list_element);
+		add_assoc_long( return_value, addr, slist[i].memory );
 	}
 }
 /* }}} */
