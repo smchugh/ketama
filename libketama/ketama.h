@@ -34,6 +34,7 @@
 #define MAX_SERVERS  125  // Set max of server to calculate the size of the shared memory (MC_SHMSIZE)
 #define MAX_MCS_POINTS  MAX_SERVERS * 160
 #define PATH_MAX 256  //maximum size of the filename parameter
+#define IP_LEN_MAX 22 //maximum length of an ip address with port
 
 #ifdef __cplusplus /* If this is a C++ compiler, use C linkage */
 extern "C" {
@@ -53,12 +54,12 @@ typedef int (*compfn)( const void*, const void* );
 typedef struct
 {
     unsigned int point;  // point on circle
-    char ip[22];
+    char ip[IP_LEN_MAX];
 } mcs;
 
 typedef struct
 {
-    char addr[22];
+    char addr[IP_LEN_MAX];
     unsigned long memory;
 } serverinfo;
 
@@ -103,6 +104,13 @@ void ketama_smoke( ketama_continuum cont );
   * \param cont Pointer to the continuum resource in which we will search.
   * \return The mcs struct that the given key maps to. */
 mcs* ketama_get_server( char* key, ketama_continuum cont );
+
+/** \brief Returns the array of current servers.
+  * \param cont Pointer to the continuum resource in which we will search.
+  * \param slist_ptr Pointer to the array of servers.
+  * \param numservers_ptr Pointer to the number of servers.
+  * \return 0 on failure, 1 on success. */
+int ketama_get_server_list( ketama_continuum cont, serverinfo** slist_ptr, int* numservers_ptr );
 
 /** \brief Adds a server to the ring
   * \param addr The address of the server that you want to add.

@@ -220,6 +220,7 @@ ketama_sem_init( key_t key )
 {
     if (sem_ids == NULL) {
         init_sem_id_tracker();
+        syslog( LOG_INFO, "Semaphore tracker initiated.\n" );
     }
 
     int sem_set_id;
@@ -579,6 +580,30 @@ ketama_get_server( char* key, ketama_continuum cont )
         if ( lowp > highp )
             return &cont->data->array[0];
     }
+}
+
+int
+ketama_get_server_list( ketama_continuum cont, serverinfo** slist_ptr, int* numservers_ptr )
+{
+    // verify that a valid resource was passed in before getting its key
+    if (cont == NULL) {
+        snprintf( k_error, sizeof(k_error), "Ketama: ketama_get_server_list passed illegal pointer to a continuum resource.\n" );
+        syslog( LOG_INFO, k_error );
+        return 0;
+    }
+    key_t key = cont->key;
+
+    // try to find an existsing resource with a shared memory segment in the array of tracked resources, or create a new attachment resource
+    if ( !get_shm_resource(key, cont) ) {
+        snprintf( k_error, sizeof(k_error), "Ketama: ketama_get_server_list failed to get a valid resource.\n" );
+        syslog( LOG_INFO, k_error  );
+        return 0;
+    }
+
+    *slist_ptr = cont->data->slist;
+    *numservers_ptr = cont->data->numservers;
+
+    return 1;
 }
 
 /** \brief Loads the continuum of servers (each server as many points on a circle).
@@ -961,10 +986,12 @@ ketama_roll( ketama_continuum* contptr, char* filename )
     // some initialization
     if (shm_resources == NULL) {
         init_shm_resource_tracker();
+        syslog( LOG_INFO, "Resource tracker initiated.\n" );
     }
 
     // initiate the resource pointer
     *contptr = (ketama_continuum) malloc( sizeof(continuum_resource) );
+    syslog( LOG_INFO, "Shared memory resource initiated.\n" );
 
     return ketama_roller( contptr, filename, 0);
 }
@@ -978,7 +1005,6 @@ ketama_smoke( ketama_continuum cont )
     if (shm_resources != NULL) {
         for (i = 0; i < num_resources; i++) {
             ketama_shmdt(shm_resources[i].data);
-            shmctl(shm_resources[i].shmid, IPC_RMID, 0);
         }
         free(shm_resources);
         shm_resources = NULL;
@@ -987,9 +1013,6 @@ ketama_smoke( ketama_continuum cont )
     }
 
     if (sem_ids != NULL) {
-        for (i = 0; i < num_sem_ids; i++) {
-            semctl(sem_ids[i], 0, IPC_RMID, 0);
-        }
         free(sem_ids);
         sem_ids = NULL;
         num_sem_ids = 0;

@@ -50,6 +50,7 @@ zend_function_entry ketama_functions[] = {
 	PHP_FE(ketama_roll,		        NULL)
 	PHP_FE(ketama_destroy,		    NULL)
 	PHP_FE(ketama_get_server,	    NULL)
+	PHP_FE(ketama_get_server_list,	NULL)
 	PHP_FE(ketama_add_server,	    NULL)
 	PHP_FE(ketama_remove_server,    NULL)
     PHP_FE(ketama_print_continuum,  NULL)
@@ -111,7 +112,7 @@ PHP_MINIT_FUNCTION(ketama)
 	ZEND_INIT_MODULE_GLOBALS(ketama, php_ketama_init_globals, NULL);
 	REGISTER_INI_ENTRIES();
 	*/
-	le_ketama_continuum = zend_register_list_destructors_ex(ketama_continuum_dtor, NULL, "ketama continuum", module_number);
+	//le_ketama_continuum = zend_register_list_destructors_ex(ketama_continuum_dtor, NULL, "ketama continuum", module_number);
 
 	return SUCCESS;
 }
@@ -253,6 +254,41 @@ PHP_FUNCTION(ketama_get_server)
 }
 /* }}} */
 
+
+/* {{{ proto resource ketama_get_server(string $key, resource $continuum)
+   Finds a server for the given key in the continuum */
+PHP_FUNCTION(ketama_get_server_list)
+{
+	zval *zcontinuum;
+	ketama_continuum continuum;
+	serverinfo* slist;
+	int i, numservers;
+	char addr[IP_LEN_MAX];
+
+	if ( zend_parse_parameters( ZEND_NUM_ARGS() TSRMLS_CC, "r", &zcontinuum ) == FAILURE )
+	{
+		return;
+	}
+
+	ZEND_FETCH_RESOURCE( continuum, ketama_continuum, &zcontinuum, -1, "ketama continuum", le_ketama_continuum );
+	if (!ketama_get_server_list( continuum, &slist, &numservers )) {
+		php_error_docref(NULL TSRMLS_CC, E_ERROR, "unable to get the server list");
+	}
+
+	array_init( return_value );
+	for (i = 0; i < numservers; i++) {
+		zval *server_list_element;
+		ALLOC_INIT_ZVAL(server_list_element);
+        array_init(server_list_element);
+
+        snprintf(addr, sizeof(addr), "%s", slist[i].addr);
+		add_assoc_string( server_list_element, "address", addr, 1 );
+		add_assoc_long( server_list_element, "memory", slist[i].memory );
+
+		add_next_index_zval(return_value, server_list_element);
+	}
+}
+/* }}} */
 
 /* {{{ proto void ketama_add_server(string $address, int $memory, resource $continuum)
    Adds a server to the ring */
