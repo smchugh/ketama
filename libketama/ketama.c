@@ -434,7 +434,7 @@ read_server_definitions( char* filename, int* count, unsigned long* memory )
 serverinfo*
 add_serverinfo( char* addr, unsigned long newmemory, continuum* cont, int* count, unsigned long* memory)
 {
-    int i, numservers;
+    int i, numservers, indx = -1;
     unsigned long memtotal;
     serverinfo newserver, *newslist = 0;
     newserver.memory = 0;
@@ -443,21 +443,41 @@ add_serverinfo( char* addr, unsigned long newmemory, continuum* cont, int* count
     numservers = cont->numservers;
     memtotal = cont->memtotal;
 
-    // populate the new server struct
-    snprintf( newserver.addr, sizeof(newserver.addr), "%s", addr );
-    newserver.memory = newmemory;
-
-    // add the server to the list
-    newslist = (serverinfo*) malloc( sizeof( serverinfo ) * ( numservers + 1 ) );
+    // search for the server to make sure we don't add duplicates
     for (i = 0; i < numservers; i++) {
-        memcpy( &newslist[i], &cont->slist[i], sizeof(serverinfo) );
+        if (!strcmp(addr, cont->slist[i].addr)) {
+            indx = i;
+        }
     }
-    memcpy( &newslist[numservers], &newserver, sizeof(serverinfo) );
-    numservers++;
-    memtotal += newmemory;
 
-    // sort the server list
-    qsort( (void *) newslist, numservers, sizeof( serverinfo ), (compfn)serverinfo_compare );
+    if (indx == -1) {
+        // populate the new server struct
+        snprintf( newserver.addr, sizeof(newserver.addr), "%s", addr );
+        newserver.memory = newmemory;
+
+        // add the server to the list
+        newslist = (serverinfo*) malloc( sizeof( serverinfo ) * ( numservers + 1 ) );
+        for (i = 0; i < numservers; i++) {
+            memcpy( &newslist[i], &cont->slist[i], sizeof(serverinfo) );
+        }
+        memcpy( &newslist[numservers], &newserver, sizeof(serverinfo) );
+        numservers++;
+        memtotal += newmemory;
+
+        // sort the server list
+        qsort( (void *) newslist, numservers, sizeof( serverinfo ), (compfn)serverinfo_compare );
+
+        snprintf( k_error, sizeof(k_error), "Ketama: %s was added.\n", addr);
+        syslog( LOG_INFO, k_error );
+    } else {
+        // create a local copy of the slist in shared memory to pass into load_continuum, which will free it
+        newslist = (serverinfo*) malloc( sizeof( serverinfo ) * ( numservers ) );
+        for (i = 0; i < numservers; i++) {
+            memcpy( &newslist[i], &cont->slist[i], sizeof(serverinfo) );
+        }
+        snprintf( k_error, sizeof(k_error), "Ketama: %s is already in the server list and was not added.\n", addr);
+        syslog( LOG_INFO, k_error );
+    }
 
     *count = numservers;
     *memory = memtotal;
@@ -494,7 +514,7 @@ remove_serverinfo( char* addr, continuum* cont, int* count, unsigned long* memor
         for (i = 0; i < numservers; i++) {
             memcpy( &newslist[i], &cont->slist[i], sizeof(serverinfo) );
         }
-        snprintf( k_error, sizeof(k_error), "Ketama: %s not found and not removed!", addr);
+        snprintf( k_error, sizeof(k_error), "Ketama: %s not found and not removed.\n", addr);
         syslog( LOG_INFO, k_error );
     } else {
         newslist = (serverinfo*) malloc( sizeof( serverinfo ) * ( numservers - 1 ) );
@@ -511,7 +531,7 @@ remove_serverinfo( char* addr, continuum* cont, int* count, unsigned long* memor
 
         // sort the server list
         qsort( (void *) newslist, numservers, sizeof( serverinfo ), (compfn)serverinfo_compare );
-        snprintf( k_error, sizeof(k_error), "Ketama: %s removed!", addr);
+        snprintf( k_error, sizeof(k_error), "Ketama: %s was removed.\n", addr);
         syslog( LOG_INFO, k_error );
     }
 
