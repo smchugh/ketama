@@ -110,7 +110,7 @@ mcs* ketama_get_server( char* key, ketama_continuum cont );
   * \param slist_ptr Pointer to the array of servers.
   * \param numservers_ptr Pointer to the number of servers.
   * \return 0 on failure, 1 on success. */
-int ketama_get_server_list( ketama_continuum cont, serverinfo** slist_ptr, int* numservers_ptr );
+int ketama_get_server_count( ketama_continuum cont );
 
 /** \brief Adds a server to the ring
   * \param addr The address of the server that you want to add.

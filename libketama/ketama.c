@@ -67,12 +67,9 @@ track_shm_resource(continuum_resource resource) {
     // find the resource and update it
     for (i = 0; i < num_resources; i++) {
         if (shm_resources[i].key == resource.key) {
-            // if the continuum pointer is invalid don't count this as a found resource
-            if (shm_resources[i].data != NULL) {
-                indx = i;
-                shm_resources[i].data = resource.data;
-                shm_resources[i].key = resource.key;
-            }
+            indx = i;
+            shm_resources[i].data = resource.data;
+            shm_resources[i].shmid = resource.shmid;
         }
     }
 
@@ -143,7 +140,15 @@ get_shm_resource(key_t key, ketama_continuum cont) {
 static int
 ketama_shmdt(void* data)
 {
-    int result;
+    int i, result;
+
+    // reset the tracked resource to dummy values
+    for (i = 0; i < num_resources; i++) {
+        if (shm_resources[i].data == data) {
+            shm_resources[i].data = NULL;
+            shm_resources[i].shmid = -1;
+        }
+    }
 
 #ifdef SOLARIS
     result = shmdt( (char *) data );
@@ -299,7 +304,7 @@ static key_t
 get_key( char* filename, time_t* fmodtime )
 {
     key_t key;
-    if (!strncmp(filename, "key:", 4)) {
+    if (strncmp(filename, "key:", 4) == 0) {
         unsigned int key_val = -1;
         sscanf(filename, "key:%x", &key_val );
         *fmodtime = 0;
@@ -325,7 +330,6 @@ read_server_line( char* line, serverinfo* server )
 
     char* tok = strtok_r( line, delim, &saveptr );
 
-    char* mem = NULL;
     char* endptr = NULL;
 
     snprintf( server->addr, sizeof(server->addr), "%s", tok );
@@ -335,26 +339,18 @@ read_server_line( char* line, serverinfo* server )
     /* We do not check for a NULL return earlier because strtok will
      * always return at least the first token; hence never return NULL.
      */
-    if ( tok == 0 )
-    {
+    if ( tok == NULL ) {
         snprintf( k_error, sizeof(k_error), "Ketama: Unable to find delimiter.\n" );
         syslog( LOG_INFO, k_error );
         server->memory = 0;
-    }
-    else
-    {
-        mem = strdup( tok );
-
+    } else {
         errno = 0;
-        server->memory = strtol( mem, &endptr, 10 );
-        if ( errno == ERANGE || endptr == mem )
-        {
+        server->memory = strtol( tok, &endptr, 10 );
+        if ( errno == ERANGE || endptr == tok ) {
             snprintf( k_error, sizeof(k_error), "Ketama: Invalid memory value.\n" );
             syslog( LOG_INFO, k_error );
             server->memory = 0;
         }
-
-        free( mem );
     }
 }
 
@@ -603,27 +599,24 @@ ketama_get_server( char* key, ketama_continuum cont )
 }
 
 int
-ketama_get_server_list( ketama_continuum cont, serverinfo** slist_ptr, int* numservers_ptr )
+ketama_get_server_count( ketama_continuum cont )
 {
     // verify that a valid resource was passed in before getting its key
     if (cont == NULL) {
-        snprintf( k_error, sizeof(k_error), "Ketama: ketama_get_server_list passed illegal pointer to a continuum resource.\n" );
+        snprintf( k_error, sizeof(k_error), "Ketama: ketama_get_server_count passed illegal pointer to a continuum resource.\n" );
         syslog( LOG_INFO, k_error );
-        return 0;
+        return -1;
     }
     key_t key = cont->key;
 
     // try to find an existsing resource with a shared memory segment in the array of tracked resources, or create a new attachment resource
     if ( !get_shm_resource(key, cont) ) {
-        snprintf( k_error, sizeof(k_error), "Ketama: ketama_get_server_list failed to get a valid resource.\n" );
+        snprintf( k_error, sizeof(k_error), "Ketama: ketama_get_server_count failed to get a valid resource.\n" );
         syslog( LOG_INFO, k_error  );
-        return 0;
+        return -1;
     }
 
-    *slist_ptr = cont->data->slist;
-    *numservers_ptr = cont->data->numservers;
-
-    return 1;
+    return cont->data->numservers;
 }
 
 /** \brief Loads the continuum of servers (each server as many points on a circle).
@@ -739,6 +732,7 @@ load_continuum(key_t key, serverinfo* slist, int numservers, unsigned long memor
     data->fmodtime = fmodtime;
     memcpy( data->array, ring, sizeof( mcs ) * numpoints );
     memcpy( data->slist, slist, sizeof( serverinfo ) * numservers );
+    syslog( LOG_INFO, "Ketama: copied mcs array into %p from %p and slist into %p from %p.\n", data->array, ring, data->slist, slist );
 
     data->cont_version++;
     data->cont_modtime = time(NULL);
@@ -782,7 +776,7 @@ ketama_create_continuum(key_t key, char* filename, ketama_continuum* contptr)
     continuum* data;
 
     // if filename is not a user-specific key, init a shared memory segment from the pathname, if it's valid
-    if (strncmp(filename, "key:", 4)) {
+    if (strncmp(filename, "key:", 4) != 0) {
         // get the list of servers from the provided file
         slist = read_server_definitions( filename, &numservers, &memory );
 
@@ -831,7 +825,7 @@ ketama_create_continuum(key_t key, char* filename, ketama_continuum* contptr)
     }
 
     // if filename is not a path, init an empty shared memory segment, otherwise just record the filename
-    if (!strncmp(filename, "key:", 4)) {
+    if (strncmp(filename, "key:", 4) == 0) {
         data->fmodtime = 0;
         data->cont_version = 1;
         data->cont_modtime = time(NULL);
@@ -971,7 +965,8 @@ ketama_roller( ketama_continuum* contptr, char* filename, int roller_flag )
     if ( (resource.data->fmodtime == fmodtime) && (resource.data->cont_version != 0) ) {
         **contptr = resource;
         track_shm_resource(resource);
-        syslog( LOG_INFO, "Ketama: ketama_roll() successfully found a valid shared memory segment.\n" );
+        syslog( LOG_INFO, "Ketama: ketama_roll() successfully found a valid shared memory segment at %p with ID: %lu and key: %lu, stored into %p.\n", 
+            resource.data, (long unsigned int) resource.shmid, (long unsigned int) resource.key, *contptr);
         return 1;
     }
 
@@ -1006,12 +1001,12 @@ ketama_roll( ketama_continuum* contptr, char* filename )
     // some initialization
     if (shm_resources == NULL) {
         init_shm_resource_tracker();
-        syslog( LOG_INFO, "Resource tracker initiated.\n" );
+        syslog( LOG_INFO, "Ketama: Resource tracker initiated.\n" );
     }
 
     // initiate the resource pointer
     *contptr = (ketama_continuum) malloc( sizeof(continuum_resource) );
-    syslog( LOG_INFO, "Shared memory resource initiated.\n" );
+    syslog( LOG_INFO, "Ketama: Shared memory resource initiated.\n" );
 
     return ketama_roller( contptr, filename, 0);
 }

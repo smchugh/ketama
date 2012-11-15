@@ -43,7 +43,7 @@ PHP_MINFO_FUNCTION(ketama);
 PHP_FUNCTION(ketama_roll);
 PHP_FUNCTION(ketama_destroy);
 PHP_FUNCTION(ketama_get_server);
-PHP_FUNCTION(ketama_get_server_list);
+PHP_FUNCTION(ketama_get_server_count);
 PHP_FUNCTION(ketama_add_server);
 PHP_FUNCTION(ketama_remove_server);
 PHP_FUNCTION(ketama_print_continuum);
