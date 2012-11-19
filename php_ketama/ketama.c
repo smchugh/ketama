@@ -28,6 +28,8 @@
 #include "php_ketama.h"
 #include "ketama.h"
 
+#define PHP_KETAMA_VERSION "0.2"
+
 /* If you declare any globals in php_ketama.h uncomment this:
 ZEND_DECLARE_MODULE_GLOBALS(ketama)
 */
@@ -73,7 +75,7 @@ zend_module_entry ketama_module_entry = {
 	PHP_RSHUTDOWN(ketama),	/* Replace with NULL if there's nothing to do at request end */
 	PHP_MINFO(ketama),
 #if ZEND_MODULE_API_NO >= 20010901
-	"0.1", /* Replace with version number for your extension */
+	PHP_KETAMA_VERSION, /* Replace with version number for your extension */
 #endif
 	STANDARD_MODULE_PROPERTIES
 };
@@ -153,6 +155,7 @@ PHP_MINFO_FUNCTION(ketama)
 {
 	php_info_print_table_start();
 	php_info_print_table_header(2, "ketama support", "enabled");
+	php_info_print_table_row(2, "Ketama Version", PHP_KETAMA_VERSION);
 	php_info_print_table_end();
 
 	/* Remove comments if you have entries in php.ini
