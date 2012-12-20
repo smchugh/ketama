@@ -1,53 +1,36 @@
-#                                               -*- Autoconf -*-
-# Process this file with autoconf to produce a configure script.
+AC_INIT(libketama, version-0.1)
 
-AC_PREREQ([2.59])
-AC_INIT([libketama], [0.1], [bclark@wayfair.com])
-AM_INIT_AUTOMAKE([foreign])
-AC_CONFIG_SRCDIR([ketama.c])
-AC_CONFIG_HEADERS(config.h)
-# Checks for programs.
-AC_PROG_AWK
-AC_PROG_CC
-AC_PROG_INSTALL
-AC_PROG_LN_S
-AC_CANONICAL_HOST
-case "${host}" in
-  *-*-freebsd*)
-	CFLAGS="$CFLAGS"
-	LDFLAGS="$LDFLAGS -shared -lm -Wl,-soname,libketama.so.1"
-	;;
-  *-*-linux*)
-	CFLAGS="$CFLAGS"
-	LDFLAGS+=" -shared -lm -Wl,-soname,libketama.so.1"
-	;;
-  *-*-darwin*)
-	CFLAGS+=" -fPIC -W -Wall -Werror -isysroot /Developer/SDKs/MacOSX10.5.sdk -arch ppc -arch i386 -arch ppc64 -arch x86_64"
-	LDFLAGS+=" -g -dynamiclib -isysroot /Developer/SDKs/MacOSX10.5.sdk -arch ppc -arch i386 -arch ppc64 -arch x86_64"
-	;;
-  *-*-solaris2*)
-	CFLAGS="$(CFLAGS) -DSOLARIS"
-	LDFLAGS="$(LDFLAGS) -shared -lm"
-	;;
-  *)
-	AC_MSG_RESULT([Unsupported operating system: ${host}, assuming defaults known to work on linux and freebsd])
-	CFLAGS="$CFLAGS"
-	LDFLAGS+="$LDFLAGS -shared -lm -Wl,-soname,libketama.so.1"
-	;;
-esac
+AC_ARG_WITH(fnv, [  --with-fnv            enable FNV-1a hash support])
 
-# Checks for header files.
-AC_CHECK_HEADERS([stdlib.h string.h syslog.h unistd.h])
+AC_CHECK_HEADER(ketama.h)
+AC_CHECK_HEADER(stdio.h)
+AC_CHECK_HEADER(string.h)
+AC_CHECK_HEADER(errno.h)
+AC_CHECK_HEADER(time.h)
+AC_CHECK_HEADER(unistd.h)
+AC_CHECK_HEADER(math.h)
+AC_CHECK_HEADER(sys/stat.h)
+AC_CHECK_HEADER(sys/shm.h)
+AC_CHECK_HEADER(sys/sem.h)
 
-# Checks for typedefs, structures, and compiler characteristics.
+AC_CHECK_HEADER(fnv.h)
+AC_CHECK_HEADER(stdlib.h)
 
-# Checks for library functions.
-AC_FUNC_MALLOC
-AC_FUNC_MKTIME
-AC_FUNC_REALLOC
-AC_CHECK_FUNCS([strtol])
-AC_CONFIG_FILES([Makefile])
-AC_OUTPUT
-echo "
-    Prefix.......: $prefix
-"
+AC_CHECK_HEADER(md5.h)
+
+AC_DEFINE(POINTS_PER_SERVER, 160)
+if test "$with_fnv" == "yes"
+then
+    AC_MSG_NOTICE([Using FNV-1a hash algorithm])
+    AC_DEFINE(ENABLE_FNV_HASH, 1)
+    AC_DEFINE(POINTS_PER_HASH, 1)
+    MODULE_HASH="fnv_32a"
+else
+    AC_MSG_NOTICE([Using MD5 hash algorithm])
+    AC_DEFINE(POINTS_PER_HASH, 4)
+    MODULE_HASH="md5"
+fi
+cp confdefs.h ketama_config.h
+
+AC_SUBST(MODULE_HASH)
+AC_OUTPUT(Makefile)
