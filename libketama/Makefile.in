@@ -1,6 +1,8 @@
 MODULE_HASH=@MODULE_HASH@
 PREFIX=/usr/local
 
+all: build
+
 build:
 	gcc -fPIC -O3 -c ${MODULE_HASH}.c
 	gcc -fPIC -O3 -c ketama.c

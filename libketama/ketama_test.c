@@ -6,7 +6,7 @@
  *
  */
 
-#include <ketama.h>
+#include "ketama.h"
 #include <stdio.h>
 #include <stdlib.h>
 
