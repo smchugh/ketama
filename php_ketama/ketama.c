@@ -28,7 +28,7 @@
 #include "php_ketama.h"
 #include "ketama.h"
 
-#define PHP_KETAMA_VERSION "0.1.1"
+#define PHP_KETAMA_VERSION "0.1.2"
 
 /* If you declare any globals in php_ketama.h uncomment this:
 ZEND_DECLARE_MODULE_GLOBALS(ketama)

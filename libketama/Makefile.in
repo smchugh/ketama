@@ -7,11 +7,24 @@ build:
 	gcc -fPIC -O3 -c ${MODULE_HASH}.c
 	gcc -fPIC -O3 -c ketama.c
 
-	gcc -shared -o libketama.so ketama.o ${MODULE_HASH}.o
+	gcc -shared -o libketama.so.1 ketama.o ${MODULE_HASH}.o
 	gcc -O3 -o ketama_test ketama_test.c ketama.o ${MODULE_HASH}.o -lm
 
 install:
-	@mkdir -p $(PREFIX)/lib
-	@mkdir -p $(PREFIX)/include
-	cp libketama.so $(PREFIX)/lib/
-	cp ketama.h $(PREFIX)/include/
+	install -d $(PREFIX)/lib $(PREFIX)/include
+	install libketama.so.1 $(PREFIX)/lib/
+	install ketama.h $(PREFIX)/include/
+	cd ${PREFIX}/lib && ln -sf libketama.so.1 libketama.so
+
+clean:
+	rm -f *.o
+	rm -f libketama.so.1
+	rm -f ketama_test
+	rm -f build-stamp configure-stamp
+
+uninstall:
+	rm $(PREFIX)/lib/libketama.so.1
+	rm $(PREFIX)/lib/libketama.so
+	rm $(PREFIX)/include/ketama.h
+
+deinstall: uninstall
