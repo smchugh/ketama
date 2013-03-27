@@ -436,13 +436,14 @@ read_server_definitions( char* filename, int* count, unsigned long* memory )
   * \param cont Pointer to the continuum which we will refresh. 
   * \param count The value of this pointer will be set to the amount of servers which could be parsed.
   * \param memory The value of this pointer will be set to the total amount of allocated memory across all servers.
-  * \return The temporary address of the list of servers with the new server added in */
-serverinfo*
-add_serverinfo( char* addr, unsigned long newmemory, continuum* cont, int* count, unsigned long* memory)
+  * \param newslist Pointer to an uninitialized serverinfo pointer that will be allocated in this function (if the server isn't found) and passed back by reference
+  * \return 0 on failure, 1 on success. */
+int
+add_serverinfo( char* addr, unsigned long newmemory, continuum* cont, int* count, unsigned long* memory, serverinfo **newslist)
 {
     int i, numservers, indx = -1;
     unsigned long memtotal;
-    serverinfo newserver, *newslist = 0;
+    serverinfo newserver;
     newserver.memory = 0;
 
     // get the current number of servers and available total memory
@@ -451,44 +452,38 @@ add_serverinfo( char* addr, unsigned long newmemory, continuum* cont, int* count
 
     // search for the server to make sure we don't add duplicates
     for (i = 0; i < numservers; i++) {
-        if (!strcmp(addr, cont->slist[i].addr)) {
+        if (strcmp(addr, cont->slist[i].addr) == 0) {
             indx = i;
         }
     }
 
-    if (indx == -1) {
-        // populate the new server struct
-        snprintf( newserver.addr, sizeof(newserver.addr), "%s", addr );
-        newserver.memory = newmemory;
-
-        // add the server to the list
-        newslist = (serverinfo*) malloc( sizeof( serverinfo ) * ( numservers + 1 ) );
-        for (i = 0; i < numservers; i++) {
-            memcpy( &newslist[i], &cont->slist[i], sizeof(serverinfo) );
-        }
-        memcpy( &newslist[numservers], &newserver, sizeof(serverinfo) );
-        numservers++;
-        memtotal += newmemory;
-
-        // sort the server list
-        qsort( (void *) newslist, numservers, sizeof( serverinfo ), (compfn)serverinfo_compare );
-
-        snprintf( k_error, sizeof(k_error), "Ketama: %s was added.\n", addr);
-        syslog( LOG_INFO, k_error );
-    } else {
-        // create a local copy of the slist in shared memory to pass into load_continuum, which will free it
-        newslist = (serverinfo*) malloc( sizeof( serverinfo ) * ( numservers ) );
-        for (i = 0; i < numservers; i++) {
-            memcpy( &newslist[i], &cont->slist[i], sizeof(serverinfo) );
-        }
-        snprintf( k_error, sizeof(k_error), "Ketama: %s is already in the server list and was not added.\n", addr);
-        syslog( LOG_INFO, k_error );
+    if (indx != -1) {
+        return 0;
     }
+
+    // populate the new server struct
+    snprintf( newserver.addr, sizeof(newserver.addr), "%s", addr );
+    newserver.memory = newmemory;
+
+    // add the server to the list
+    *newslist = (serverinfo*) malloc( sizeof( serverinfo ) * ( numservers + 1 ) );
+    for (i = 0; i < numservers; i++) {
+        memcpy( &(*newslist)[i], &cont->slist[i], sizeof(serverinfo) );
+    }
+    memcpy( &(*newslist)[numservers], &newserver, sizeof(serverinfo) );
+    numservers++;
+    memtotal += newmemory;
+
+    // sort the server list
+    qsort( (void *) *newslist, numservers, sizeof( serverinfo ), (compfn)serverinfo_compare );
+
+    snprintf( k_error, sizeof(k_error), "Ketama: %s was added.\n", addr);
+    syslog( LOG_INFO, k_error );
 
     *count = numservers;
     *memory = memtotal;
 
-    return newslist;
+    return 1;
 }
 
 /** \brief Removes a server from the continuum struct
@@ -496,55 +491,49 @@ add_serverinfo( char* addr, unsigned long newmemory, continuum* cont, int* count
   * \param cont Pointer to the continuum which we will refresh. 
   * \param count The value of this pointer will be set to the amount of servers which could be parsed.
   * \param memory The value of this pointer will be set to the total amount of allocated memory across all servers.
-  * \return The temporary address of the list of servers with the new server added in */
-serverinfo*
-remove_serverinfo( char* addr, continuum* cont, int* count, unsigned long* memory)
+  * \param newslist Pointer to an uninitialized serverinfo pointer that will be allocated in this function (if the server is found) and passed back by reference
+  * \return 0 on failure, 1 on success. */
+int
+remove_serverinfo( char* addr, continuum* cont, int* count, unsigned long* memory, serverinfo **newslist)
 {
     int i, j, numservers, rm_indx = -1;
     unsigned long memtotal, oldmemory = 0;
-    serverinfo *newslist;
 
     // get the current number of servers and available total memory
     numservers = cont->numservers;
     memtotal = cont->memtotal;
     
     for (i = 0; i < numservers; i++) {
-        if (!strcmp(addr, cont->slist[i].addr)) {
+        if (strcmp(addr, cont->slist[i].addr) == 0) {
             rm_indx = i;
         }
     }
     // if we didn't find the server, don't remove anything and throw a warning
     if (rm_indx == -1) {
-        // create a local copy of the slist in shared memory to pass into load_continuum, which will free it
-        newslist = (serverinfo*) malloc( sizeof( serverinfo ) * ( numservers ) );
-        for (i = 0; i < numservers; i++) {
-            memcpy( &newslist[i], &cont->slist[i], sizeof(serverinfo) );
-        }
-        snprintf( k_error, sizeof(k_error), "Ketama: %s not found and not removed.\n", addr);
-        syslog( LOG_INFO, k_error );
-    } else {
-        newslist = (serverinfo*) malloc( sizeof( serverinfo ) * ( numservers - 1 ) );
-        for (i = 0, j = 0; i < numservers; i++) {
-            if (i != rm_indx) {
-                memcpy( &newslist[j], &cont->slist[i], sizeof(serverinfo) );
-                j++;
-            } else {
-                oldmemory = cont->slist[i].memory;
-            }
-        }
-        numservers--;
-        memtotal -= oldmemory;
-
-        // sort the server list
-        qsort( (void *) newslist, numservers, sizeof( serverinfo ), (compfn)serverinfo_compare );
-        snprintf( k_error, sizeof(k_error), "Ketama: %s was removed.\n", addr);
-        syslog( LOG_INFO, k_error );
+        return 0;
     }
+
+    *newslist = (serverinfo*) malloc( sizeof( serverinfo ) * ( numservers - 1 ) );
+    for (i = 0, j = 0; i < numservers; i++) {
+        if (i != rm_indx) {
+            memcpy( &(*newslist)[j], &cont->slist[i], sizeof(serverinfo) );
+            j++;
+        } else {
+            oldmemory = cont->slist[i].memory;
+        }
+    }
+    numservers--;
+    memtotal -= oldmemory;
+
+    // sort the server list
+    qsort( (void *) *newslist, numservers, sizeof( serverinfo ), (compfn)serverinfo_compare );
+    snprintf( k_error, sizeof(k_error), "Ketama: %s was removed.\n", addr);
+    syslog( LOG_INFO, k_error );
 
     *count = numservers;
     *memory = memtotal;
 
-    return newslist;
+    return 1;
 }
 
 
@@ -643,9 +632,7 @@ ketama_get_server_count( ketama_continuum cont )
 int
 load_continuum(key_t key, serverinfo* slist, int numservers, unsigned long memory, time_t fmodtime)
 {
-    int shmid, sem_set_id;
-    int maxpoints = POINTS_PER_SERVER * numservers;
-    continuum* data;  // Pointer to shmem location
+    int maxpoints = POINTS_PER_SERVER * numservers; // maximum number of ring points (HASH_COUNT * POINTS_PER_HASH * numservers)
 
     // Continuum will hold one mcs for each point on the circle:
     mcs *ring = (mcs*) malloc( maxpoints * sizeof(mcs) );
@@ -654,19 +641,20 @@ load_continuum(key_t key, serverinfo* slist, int numservers, unsigned long memor
     // buildup the continuum ring
     for( i = 0; i < numservers; i++ )
     {
-        float pct = (float) slist[i].memory / (float)memory;
-        int ks = floorf( pct * HASH_COUNT * (float)numservers );
+        float ratio = (float) slist[i].memory / (float)memory; // ratio of hashes for this server to total hashes
+        int numhashes = floorf( ratio * HASH_COUNT * (float)numservers ); // number of hashes for this server
 #ifdef DEBUG
-        int hpct = floorf( pct * 100.0 );
+        int percent = floorf( ratio * 100.0 ); // percent of total hashes linked to this sever
         syslog( LOG_INFO, "Ketama: Server no. %d: %s (mem: %lu = %u%% or %d of %d)\n",
-            i, slist[i].addr, slist[i].memory, hpct, ks, numservers * 160 );
+            i, slist[i].addr, slist[i].memory, percent, numhashes * POINTS_PER_HASH, HASH_COUNT * numservers * POINTS_PER_HASH );
 #endif
 
 #if defined(ENABLE_FNV_HASH)
         Fnv32_t hval = FNV1_32_INIT;
 #endif
 
-        for( k = 0; k < ks; k++ )
+        // create the points on the ring for this server
+        for( k = 0; k < numhashes; k++ )
         {
 #if defined(ENABLE_FNV_HASH)
             hval = fnv_32a_str(slist[i].addr, hval);
@@ -703,13 +691,148 @@ load_continuum(key_t key, serverinfo* slist, int numservers, unsigned long memor
         }
     }
 
+    return reconstruct_continuum(key, slist, numservers, ring, numpoints, memory, fmodtime);
+}
+
+/** \brief Purges the continuum of the points on the circle for a specified server
+  * \param addr The address of the server that you want to remove points linked to.
+  * \param cont Pointer to the continuum which we will refresh. 
+  * \param key Shared memory key for storing the newly created continuum.
+  * \param slist The address of the list of servers that your building the continuum from.
+  * \param numservers Number of servers available
+  * \param memory Amount of memory available accross all servers
+  * \param fmodtime File modtime
+  * \return 0 on failure, 1 on success. */
+int
+remove_server_from_continuum(char* addr, continuum* cont, key_t key, serverinfo* slist, int numservers, unsigned long memory, time_t fmodtime)
+{
+    int maxpoints = POINTS_PER_SERVER * numservers; // maximum number of ring points (HASH_COUNT * POINTS_PER_HASH * numservers)
+    int allpoints = cont->numpoints; // total number of points in the ring prior to server removal
+
+    // Continuum will hold one mcs for each point on the circle:
+    mcs *ring = (mcs*) malloc( allpoints * sizeof(mcs) );
+    int i, k, numpoints = 0;
+
+    // buildup the new continuum ring
+    for( i = 0; i < allpoints; i++ )
+    {
+        // if this point is not linked to the server to purge, add it to the new ring
+        if (strcmp(addr, cont->array[i].ip) != 0) {
+            memcpy( &ring[numpoints], &cont->array[i], sizeof(mcs) );
+            numpoints++;
+            if (numpoints > maxpoints) {
+                snprintf( k_error, sizeof(k_error), "Ketama: remove_server_from_continuum tried to exceed mcs array bounds.\n" );
+                syslog( LOG_INFO, k_error );
+                free(ring);
+                free(slist);
+                return 0;
+            }
+        }
+    }
+
+    return reconstruct_continuum(key, slist, numservers, ring, numpoints, memory, fmodtime);
+}
+
+/** \brief Adds a specified server to the continuum that has just been added to the server list
+  * \param addr The address of the server that you want to add points for.
+  * \param newmemory The amount of allocated memory from the new server to be added to the cluster
+  * \param cont Pointer to the continuum which we will refresh. 
+  * \param key Shared memory key for storing the newly created continuum.
+  * \param slist The address of the list of servers that your building the continuum from.
+  * \param numservers Number of servers available
+  * \param memory Amount of memory available accross all servers
+  * \param fmodtime File modtime
+  * \return 0 on failure, 1 on success. */
+int
+add_server_to_continuum(char* addr, unsigned long newmemory, continuum* cont, key_t key, serverinfo* slist, int numservers, unsigned long memory, time_t fmodtime)
+{
+    int maxpoints = POINTS_PER_SERVER * numservers; // maximum number of ring points (HASH_COUNT * POINTS_PER_HASH * numservers)
+    int numoldpoints = cont->numpoints; // total number of points in the ring prior to adding the server
+
+    // Continuum will hold one mcs for each point on the circle:
+    mcs *ring = (mcs*) malloc( maxpoints * sizeof(mcs) );
+    int i, k, indx = -1, numpoints = 0;
+
+    // determine the number of hashes to create
+    float ratio = (float)newmemory / (float)memory; // ratio of hashes for this server to total hashes
+    int numhashes = floorf( ratio * HASH_COUNT * (float)numservers ); // number of hashes for this server
+#ifdef DEBUG
+    int percent = floorf( ratio * 100.0 ); // percent of total hashes linked to this sever
+    syslog( LOG_INFO, "Ketama: Server no. %d: %s (mem: %lu = %u%% or %d of %d)\n",
+        i, addr, newmemory, percent, numhashes * POINTS_PER_HASH, HASH_COUNT * numservers * POINTS_PER_HASH );
+#endif
+
+#if defined(ENABLE_FNV_HASH)
+    Fnv32_t hval = FNV1_32_INIT;
+#endif
+
+    // create the points on the ring for the new server
+    for( k = 0; k < numhashes; k++ )
+    {
+#if defined(ENABLE_FNV_HASH)
+        hval = fnv_32a_str(addr, hval);
+        ring[numpoints].point = hval;
+        snprintf( ring[numpoints].ip, sizeof(ring[numpoints].ip), "%s", addr);
+        numpoints++;
+#else
+        char ss[30];
+        unsigned char digest[16];
+
+        snprintf( ss, sizeof(ss), "%s-%d", addr, k );
+        ketama_md5_digest( ss, digest );
+
+        // Use successive 4-bytes from hash as numbers for the points on the circle:
+        int h;
+        for( h = 0; h < POINTS_PER_HASH; h++ )
+        {
+            ring[numpoints].point = ( digest[3+h*4] << 24 )
+                                  | ( digest[2+h*4] << 16 )
+                                  | ( digest[1+h*4] <<  8 )
+                                  |   digest[h*4];
+
+            snprintf( ring[numpoints].ip, sizeof(ring[numpoints].ip), "%s", addr);
+            numpoints++;
+            if (numpoints > maxpoints) {
+                snprintf( k_error, sizeof(k_error), "Ketama: add_server_to_continuum tried to exceed mcs array bounds.\n" );
+                syslog( LOG_INFO, k_error );
+                free(ring);
+                free(slist);
+                return 0;
+            }
+        }
+#endif
+    }
+
+    // append the points on the current ring (will be sorted in the reconstruction phase)
+    for( i = 0; i < numoldpoints; i++ )
+    {
+        memcpy( &ring[numpoints], &cont->array[i], sizeof(mcs) );
+        numpoints++;
+        if (numpoints > maxpoints) {
+            snprintf( k_error, sizeof(k_error), "Ketama: add_server_to_continuum tried to exceed mcs array bounds.\n" );
+            syslog( LOG_INFO, k_error );
+            free(ring);
+            free(slist);
+            return 0;
+        }
+    }
+
+    // reconstruct the continuum
+    return reconstruct_continuum(key, slist, numservers, ring, numpoints, memory, fmodtime);
+}
+
+int
+reconstruct_continuum(key_t key, serverinfo* slist, int numservers, mcs* ring, int numpoints, unsigned long memory, time_t fmodtime) {
+    int shmid, sem_set_id;
+    continuum* data;  // Pointer to shmem location
+
     // sort the ring in ascending order of "point"
     qsort( (void*) ring, numpoints, sizeof( mcs ), (compfn)ketama_compare );
 
     // attempt to obtain the shared memory ID assigned to this key, and create a segment if it doesn't exist
     shmid = shmget( key, MC_SHMSIZE, 0644 | IPC_CREAT );
     if ( shmid == -1 ) {
-        snprintf( k_error, sizeof(k_error), "Ketama: load_continuum failed to get valid shared memory segment with errno: %d.\n", errno );
+        snprintf( k_error, sizeof(k_error), "Ketama: reconstruct_continuum failed to get valid shared memory segment with errno: %d.\n", errno );
         syslog( LOG_INFO, k_error );
         return 0;
     }
@@ -722,20 +845,20 @@ load_continuum(key_t key, serverinfo* slist, int numservers, unsigned long memor
     // create an attachment in virtual memory to the shared memory segment, and failout if that an error is returned
     data = (continuum*) shmat( shmid, (void *)0, 0 );
     if ( data == (void *)(-1) ) {
-        snprintf( k_error, sizeof(k_error), "Ketama: load_continuum failed to attach writable shared memory segment with errno: %d.\n", errno );
+        snprintf( k_error, sizeof(k_error), "Ketama: reconstruct_continuum failed to attach writable shared memory segment with errno: %d.\n", errno );
         invalid_write = 1;
     }
 
     // verify that the mcs array can hold this many points
-    if ( sizeof(data->array) < sizeof( mcs ) * numpoints ) {
-        snprintf( k_error, sizeof(k_error), "Ketama: load_continuum tried to exceed size of mcs array.\n" );
+    if ( sizeof(data->array) < sizeof(mcs) * numpoints ) {
+        snprintf( k_error, sizeof(k_error), "Ketama: reconstruct_continuum tried to exceed size of mcs array.\n" );
         ketama_shmdt(data);
         invalid_write = 1;
     }
 
     // verify that the serverinfo array can hold this many servers
-    if ( sizeof(data->slist) < sizeof( serverinfo) * numservers ) {
-        snprintf( k_error, sizeof(k_error), "Ketama: load_continuum tried to exceed size of servers array.\n" );
+    if ( sizeof(data->slist) < sizeof(serverinfo) * numservers ) {
+        snprintf( k_error, sizeof(k_error), "Ketama: reconstruct_continuum tried to exceed size of servers array.\n" );
         ketama_shmdt(data);
         invalid_write = 1;
     }
@@ -763,7 +886,7 @@ load_continuum(key_t key, serverinfo* slist, int numservers, unsigned long memor
 
     // We detatch here because we will re-attach in read-only mode to actually use it.
     if (ketama_shmdt(data) == -1) {
-        snprintf( k_error, sizeof(k_error), "Ketama: load_continuum failed to detatch from shared memory with errno: %d.\n", errno );
+        snprintf( k_error, sizeof(k_error), "Ketama: reconstruct_continuum failed to detatch from shared memory with errno: %d.\n", errno );
         syslog( LOG_INFO, k_error );
     }
     // unlock the semaphore
@@ -783,6 +906,7 @@ load_continuum(key_t key, serverinfo* slist, int numservers, unsigned long memor
   *                    1 to only allow a check for a valid continuum
   * \return 0 on failure, 1 on success. */
 static int ketama_roller( ketama_continuum* contptr, char* filename, int roller_flag );
+// need this declared here, but it will be defined later on
 
 
 /** \brief Generates the continuum of servers (each server as many points on a circle).
@@ -894,21 +1018,24 @@ ketama_add_server( char* addr, unsigned long newmemory, ketama_continuum cont)
     }
 
     // get the new server list
-    slist = add_serverinfo( addr, newmemory, cont->data, &numservers, &memory);
+    if (add_serverinfo( addr, newmemory, cont->data, &numservers, &memory, &slist)) {
+        // get the shared memory segment key
+        key = get_key( cont->data->cont_filename, &fmodtime );
+        if ( key == -1 ) {
+            snprintf( k_error, sizeof(k_error), "Ketama: ketama_add_server failed to make a valid key from %s.\n", cont->data->cont_filename );
+            syslog( LOG_INFO, k_error );
+            return 0;
+        }
 
-    // get the shared memory segment key
-    key = get_key( cont->data->cont_filename, &fmodtime );
-    if ( key == -1 ) {
-        snprintf( k_error, sizeof(k_error), "Ketama: ketama_add_server failed to make a valid key from %s.\n", cont->data->cont_filename );
+        // attempt to load the continuum
+        if ( !add_server_to_continuum( addr, newmemory, cont->data, key, slist, numservers, memory, fmodtime ) ) {
+            snprintf( k_error, sizeof(k_error), "Ketama: ketama_add_server failed to add the server to the continuum.\n" );
+            syslog( LOG_INFO, k_error );
+            return 0;
+        }
+    } else {
+        snprintf( k_error, sizeof(k_error), "Ketama: %s is already in the server list and was not added.\n", addr);
         syslog( LOG_INFO, k_error );
-        return 0;
-    }
-
-    // attempt to load the continuum
-    if ( !load_continuum( key, slist, numservers, memory, fmodtime ) ) {
-        snprintf( k_error, sizeof(k_error), "Ketama: ketama_add_server failed to load the continuum.\n" );
-        syslog( LOG_INFO, k_error );
-        return 0;
     }
 
     return ketama_roller( &cont, cont->data->cont_filename, 1);
@@ -939,21 +1066,24 @@ ketama_remove_server( char* addr, ketama_continuum cont)
     }
 
     // get the new server list
-    slist = remove_serverinfo( addr, cont->data, &numservers, &memory);
-    
-    // get the shared memory segment key, validating the key that was passed in
-    key = get_key( cont->data->cont_filename, &fmodtime );
-    if ( key == -1 ) {
-        snprintf( k_error, sizeof(k_error), "Ketama: ketama_remove_server failed to make a valid key from %s.\n", cont->data->cont_filename );
-        syslog( LOG_INFO, k_error );
-        return 0;
-    }
+    if (remove_serverinfo( addr, cont->data, &numservers, &memory, &slist)) {
+        // get the shared memory segment key, validating the key that was passed in
+        key = get_key( cont->data->cont_filename, &fmodtime );
+        if ( key == -1 ) {
+            snprintf( k_error, sizeof(k_error), "Ketama: ketama_remove_server failed to make a valid key from %s.\n", cont->data->cont_filename );
+            syslog( LOG_INFO, k_error );
+            return 0;
+        }
 
-    // attempt to load the continuum
-    if ( !load_continuum( key, slist, numservers, memory, fmodtime ) ) {
-        snprintf( k_error, sizeof(k_error), "Ketama: ketama_remove_server failed to load the continuum.\n" );
+        // attempt to purge the continuum of points for this server
+        if ( !remove_server_from_continuum( addr, cont->data, key, slist, numservers, memory, fmodtime ) ) {
+            snprintf( k_error, sizeof(k_error), "Ketama: ketama_remove_server failed to remove the server from the continuum.\n" );
+            syslog( LOG_INFO, k_error );
+            return 0;
+        }
+    } else {
+        snprintf( k_error, sizeof(k_error), "Ketama: %s not found and not removed.\n", addr);
         syslog( LOG_INFO, k_error );
-        return 0;
     }
     
     return ketama_roller( &cont, cont->data->cont_filename, 1);

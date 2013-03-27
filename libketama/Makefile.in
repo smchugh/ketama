@@ -11,10 +11,10 @@ build:
 	gcc -O3 -o ketama_test ketama_test.c ketama.o ${MODULE_HASH}.o -lm
 
 install:
-	install -d $(PREFIX)/lib $(PREFIX)/include
-	install libketama.so.1 $(PREFIX)/lib/
+	install -d $(PREFIX)/lib64 $(PREFIX)/include
+	install libketama.so.1 $(PREFIX)/lib64/
 	install ketama.h $(PREFIX)/include/
-	cd ${PREFIX}/lib && ln -sf libketama.so.1 libketama.so
+	cd ${PREFIX}/lib64 && ln -sf libketama.so.1 libketama.so
 
 clean:
 	rm -f *.o
@@ -23,8 +23,8 @@ clean:
 	rm -f build-stamp configure-stamp
 
 uninstall:
-	rm $(PREFIX)/lib/libketama.so.1
-	rm $(PREFIX)/lib/libketama.so
+	rm $(PREFIX)/lib64/libketama.so.1
+	rm $(PREFIX)/lib64/libketama.so
 	rm $(PREFIX)/include/ketama.h
 
 deinstall: uninstall

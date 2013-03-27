@@ -13,10 +13,8 @@
 int main(int argc, char **argv)
 {
 
-  if( argc == 1 ){
-	  //printf("Usage: %s <ketama.servers file>\n", *argv);
-	  //return 1;
-    argv[1] = "";
+  if ( argc == 1 ) {
+    argv[1] = "key:1234";
   }
 
   ketama_continuum c;
@@ -35,16 +33,18 @@ int main(int argc, char **argv)
 
   count = c->data->numpoints > 10 ? 10 : c->data->numpoints;
 
+  printf("# points: %u\n", c->data->numpoints);
+
   for ( i = 0; i < count; i++ )
   {
     printf( "%s (%u) %lu\n", c->data->array[i].ip, c->data->array[i].point, (unsigned long int)&c->data->array[i] );
   }
   printf( "\n\n\n");
 
-  
 
 
-  ketama_remove_server( "10.0.1.2:11211", c);
+
+  ketama_remove_server( "10.0.1.6:11211", c);
   ketama_remove_server( "10.0.1.81:11211", c);
   ketama_remove_server( "10.0.1.82:11211", c);
 
@@ -60,6 +60,8 @@ int main(int argc, char **argv)
 
   count = c->data->numpoints > 10 ? 10 : c->data->numpoints;
 
+  printf("# points: %u\n", c->data->numpoints);
+
   for ( i = 0; i < count; i++ )
   {
     printf( "%s (%u) %lu\n", c->data->array[i].ip, c->data->array[i].point, (unsigned long int)&c->data->array[i] );
@@ -69,7 +71,7 @@ int main(int argc, char **argv)
 
 
 
-  ketama_add_server( "10.0.1.2:11211", 300, c);
+  ketama_add_server( "10.0.1.6:11211", 300, c);
   ketama_add_server( "10.0.1.81:11211", 300, c);
   ketama_add_server( "10.0.1.82:11211", 300, c);
 
@@ -84,6 +86,8 @@ int main(int argc, char **argv)
   printf( "\n\n\n");
 
   count = c->data->numpoints > 10 ? 10 : c->data->numpoints;
+
+  printf("# points: %u\n", c->data->numpoints);
 
   for ( i = 0; i < count; i++ )
   {

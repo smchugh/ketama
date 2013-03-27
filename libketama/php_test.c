@@ -15,10 +15,8 @@
 int main(int argc, char **argv)
 {
 
-  if( argc == 1 ){
-	  //printf("Usage: %s <ketama.servers file>\n", *argv);
-	  //return 1;
-    argv[1] = "";
+  if ( argc == 1 ) {
+    argv[1] = "key:1234";
   }
 
   ketama_continuum c;
