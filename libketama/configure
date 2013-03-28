@@ -308,7 +308,7 @@ ac_includes_default="\
 # include <unistd.h>
 #endif"
 
-ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS CC CFLAGS LDFLAGS CPPFLAGS ac_ct_CC EXEEXT OBJEXT CPP EGREP MODULE_HASH LIBOBJS LTLIBOBJS'
+ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS CC CFLAGS LDFLAGS CPPFLAGS ac_ct_CC EXEEXT OBJEXT CPP EGREP MODULE_HASH REL_LIB_DIR LIBOBJS LTLIBOBJS'
 ac_subst_files=''
 
 # Initialize some variables set by options.
@@ -4544,6 +4544,20 @@ _ACEOF
 fi
 cp confdefs.h ketama_config.h
 
+host_os=`uname -o`
+case $host_os in
+  *Linux*|*linux*)
+        # Do something specific for linux
+        REL_LIB_DIR="lib64"
+        ;;
+    *)
+        #Default Case
+        REL_LIB_DIR="lib"
+        ;;
+esac
+
+echo "$as_me: Using $REL_LIB_DIR as the relative library directory for $host_os" >&6;
+
 
           ac_config_files="$ac_config_files Makefile"
 cat >confcache <<\_ACEOF
@@ -5190,6 +5204,7 @@ s,@OBJEXT@,$OBJEXT,;t t
 s,@CPP@,$CPP,;t t
 s,@EGREP@,$EGREP,;t t
 s,@MODULE_HASH@,$MODULE_HASH,;t t
+s,@REL_LIB_DIR@,$REL_LIB_DIR,;t t
 s,@LIBOBJS@,$LIBOBJS,;t t
 s,@LTLIBOBJS@,$LTLIBOBJS,;t t
 CEOF
