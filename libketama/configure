@@ -4545,15 +4545,21 @@ fi
 cp confdefs.h ketama_config.h
 
 host_os=`uname -o`
+host_hardware=`uname -m`
+
 case $host_os in
   *Linux*|*linux*)
-        # Do something specific for linux
-        REL_LIB_DIR="lib64"
-        ;;
-    *)
-        #Default Case
-        REL_LIB_DIR="lib"
-        ;;
+    # Do something specific for linux
+    if [[ "$host_hardware" == *64* ]]; then
+      REL_LIB_DIR="lib64"
+    else
+      REL_LIB_DIR="lib"
+    fi
+    ;;
+  *)
+    #Default Case
+    REL_LIB_DIR="lib"
+    ;;
 esac
 
 echo "$as_me: Using $REL_LIB_DIR as the relative library directory for $host_os" >&6;
