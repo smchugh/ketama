@@ -35,6 +35,9 @@ static int pyketama_Continuum_init(PyObject *self, PyObject *args,
 static PyObject *pyketama_Continuum_repr(PyObject *o);
 
 PY_DEF(pyketama_Continuum_get_server, self, args);
+PY_DEF(pyketama_Continuum_get_server_count, self, args);
+PY_DEF(pyketama_Continuum_add_server, self, args);
+PY_DEF(pyketama_Continuum_remove_server, self, args);
 PY_DEF(pyketama_Continuum_get_points, self, args);
 
 /* get_server could use METH_O instead of METH_VARARGS, but ParseTuple is
@@ -43,6 +46,12 @@ PY_DEF(pyketama_Continuum_get_points, self, args);
 static PyMethodDef pyketama_Continuum_methods[] = {
     {"get_server", pyketama_Continuum_get_server, METH_VARARGS,
      "Return a tuple containing point on circle and address where hash is."},
+    {"get_server_count", pyketama_Continuum_get_server_count, METH_NOARGS,
+     "Return an int containing the number of servers in the ring."},
+    {"add_server", pyketama_Continuum_add_server, METH_VARARGS,
+     "Add the specified server with the specified memory to the continuum."},
+    {"remove_server", pyketama_Continuum_remove_server, METH_VARARGS,
+     "Remove the specified server from the continuum."},
     {"get_points", pyketama_Continuum_get_points, METH_NOARGS,
      "Return a list with all points and associated server."},
     {NULL}

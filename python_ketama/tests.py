@@ -36,14 +36,34 @@ class KetamaTest(unittest.TestCase):
     def test_hashing(self):
         cont = ketama.Continuum(self.valid_list_file)
         self.assertEqual(cont.get_server("test"),
-            (3454255383L, '127.0.0.1:11211'))
+            (2959911115, '127.0.0.1:11211'))
 
     def test_hashi(self):
-        self.assertEqual(ketama.hashi("test"), 3446378249L)
+        self.assertEqual(ketama.hashi("test"), 2949673445)
+
+    def test_adding(self):
+        cont = ketama.Continuum(self.valid_list_file)
+	old_count = cont.get_server_count()
+        cont.add_server("127.0.0.1:11213", 700)
+	self.assertEqual(cont.get_server_count(), old_count + 1)
+
+    def test_server_count(self):
+        cont = ketama.Continuum(self.valid_list_file)
+        self.assertEqual(cont.get_server_count(), 3)
+
+    def test_removal(self):
+        cont = ketama.Continuum(self.valid_list_file)
+        cont.remove_server("127.0.0.1:11211")
+        self.assertTrue(1)
+
+    def test_server_modified_count(self):
+        cont = ketama.Continuum(self.valid_list_file)
+        self.assertEqual(cont.get_server_count(), 3)
+
 
     def test_points(self):
         cont = ketama.Continuum(self.valid_list_file)
-        self.assertEqual(len(cont.get_points()), 160 * 2)
+        self.assertEqual(len(cont.get_points()), 160 * 3)
 
 if __name__ == "__main__":
     unittest.main()

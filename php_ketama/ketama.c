@@ -28,7 +28,7 @@
 #include "php_ketama.h"
 #include "ketama.h"
 
-#define PHP_KETAMA_VERSION "0.1.3"
+#define PHP_KETAMA_VERSION "0.1.4"
 
 /* If you declare any globals in php_ketama.h uncomment this:
 ZEND_DECLARE_MODULE_GLOBALS(ketama)
@@ -110,7 +110,7 @@ static void php_ketama_init_globals(zend_ketama_globals *ketama_globals)
  */
 PHP_MINIT_FUNCTION(ketama)
 {
-	/* If you have INI entries, uncomment these lines 
+	/* If you have INI entries, uncomment these lines
 	ZEND_INIT_MODULE_GLOBALS(ketama, php_ketama_init_globals, NULL);
 	REGISTER_INI_ENTRIES();
 	*/
@@ -327,9 +327,9 @@ PHP_FUNCTION(ketama_remove_server)
 }
 /* }}} */
 
-/* The previous line is meant for vim and emacs, so it can correctly fold and 
-   unfold functions in source code. See the corresponding marks just before 
-   function definition, where the functions purpose is also documented. Please 
+/* The previous line is meant for vim and emacs, so it can correctly fold and
+   unfold functions in source code. See the corresponding marks just before
+   function definition, where the functions purpose is also documented. Please
    follow this convention for the convenience of others editing your code.
 */
 
